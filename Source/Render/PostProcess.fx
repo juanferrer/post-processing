@@ -15,6 +15,7 @@ float  PPAreaDepth;       // Depth buffer value for area (0.0 nearest to 1.0 fur
 
 // Other variables used for individual post-processes
 float3 TintColour;
+float3 TintColour2;
 float2 NoiseScale;
 float2 NoiseOffset;
 float  DistortLevel;
@@ -137,6 +138,13 @@ float4 PPTintShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 	// Sample the texture colour (look at shader above) and multiply it with the tint colour (variables near top)
 	float3 ppColour = SceneTexture.Sample( PointClamp, ppIn.UVScene ) * TintColour;
 	return float4( ppColour, 1.0f );
+}
+
+float4 PPGradientShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+	float3 heightColour = lerp(TintColour, TintColour2, ppIn.UVScene.y);
+	float3 ppColour = SceneTexture.Sample(PointClamp, ppIn.UVScene) * heightColour;
+	return float4(ppColour, 1.0f);
 }
 
 
@@ -382,8 +390,23 @@ technique10 PPTint
 		SetBlendState( NoBlending, float4( 0.0f, 0.0f, 0.0f, 0.0f ), 0xFFFFFFFF );
 		SetRasterizerState( CullBack ); 
 		SetDepthStencilState( DepthWritesOff, 0 );
-     }
+    }
 }
+
+// Tint the scene to a gradient between two colours
+technique10 PPGradient
+{
+	pass P0
+	{
+		SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+		SetGeometryShader(NULL);
+		SetPixelShader(CompileShader(ps_4_0, PPGradientShader()));
+
+		SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+		SetRasterizerState(CullBack);
+		SetDepthStencilState(DepthWritesOff, 0);
+	}
+};
 
 // Turn the scene greyscale and add some animated noise
 technique10 PPGreyNoise

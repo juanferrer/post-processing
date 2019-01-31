@@ -705,13 +705,13 @@ float4 PPTintShader( VS_BASIC_OUTPUT vOut ) : SV_Target
 	// this screen coordinate (0->width, 0->height) into a UV coordinate (0->1, 0->1) is divide by the viewport width and height. Those values are 
 	// available as variables at the top of this file.
 	//
-	//***TODO - Create a float2 called UVScene that contains the UV coordinates of this pixel (simple, following the comment above).
+	// Create a float2 called UVScene that contains the UV coordinates of this pixel (simple, following the comment above).
 	float2 UVScene = float2(vOut.ProjPos.x / ViewportWidth, vOut.ProjPos.y / ViewportHeight);
 
-	//***TODO - Sample the texture colour at the location UVSCene and multiply it by DiffuseColour (the colour of the material extracted from the .X file, variable already set up)
+	// Sample the texture colour at the location UVSCene and multiply it by DiffuseColour (the colour of the material extracted from the .X file, variable already set up)
 	float4 textureColour = SceneTexture.Sample(TrilinearWrap, UVScene) * DiffuseColour;
 
-	//***TODO - Return a float4 containing the tinted colour in rgb and 1.0 in alpha
+	// Return a float4 containing the tinted colour in rgb and 1.0 in alpha
 	return float4(textureColour.xyz, 1.0f);
 }
 

@@ -143,7 +143,7 @@
     <ClCompile Include="Source\Data\CParseLevel.cpp" />
     <ClCompile Include="Source\Data\CParseXML.cpp" />
     <ClCompile Include="Source\MainApp.cpp" />
-    <ClCompile Include="Source\PostProcessPoly.cpp" />
+    <ClCompile Include="Source\Assignment.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Scene\Camera.h" />
@@ -178,7 +178,7 @@
     <ClInclude Include="Source\Math\MathIO.h" />
     <ClInclude Include="Source\Data\CParseLevel.h" />
     <ClInclude Include="Source\Data\CParseXML.h" />
-    <ClInclude Include="Source\PostProcessPoly.h" />
+    <ClInclude Include="Source\Assignment.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Source\Render\PostProcess.fx" />
