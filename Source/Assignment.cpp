@@ -127,8 +127,11 @@ extern IDXGISwapChain*         SwapChain;
 extern ID3D10DepthStencilView* DepthStencilView;
 extern ID3D10RenderTargetView* BackBufferRenderTarget;
 extern ID3D10RenderTargetView* PostProcessingRenderTarget;
+extern ID3D10RenderTargetView* PostProcessingRenderTarget2;
 ID3D10ShaderResourceView* PostProcessShaderResource = NULL;
+ID3D10ShaderResourceView* PostProcessShaderResource2 = NULL;
 ID3D10Texture2D*          PostProcessTexture = NULL;
+ID3D10Texture2D*          PostProcessTexture2 = NULL;
 extern ID3DX10Font*            OSDFont;
 
 // Actual viewport dimensions (fullscreen or windowed)
@@ -244,10 +247,12 @@ bool PostProcessSetup()
 	textureDesc.MiscFlags = 0;
 	if (FAILED(g_pd3dDevice->CreateTexture2D( &textureDesc, NULL, &SceneTexture ))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTexture))) return false;
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTexture2))) return false;
 
 	// Get a "view" of the texture as a render target - giving us an interface for rendering to the texture
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView( SceneTexture, NULL, &SceneRenderTarget ))) return false;
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTexture, NULL, &PostProcessingRenderTarget))) return false;
+	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTexture2, NULL, &PostProcessingRenderTarget2))) return false;
 
 	// And get a shader-resource "view" - giving us an interface for passing the texture to shaders
 	D3D10_SHADER_RESOURCE_VIEW_DESC srDesc;
@@ -257,6 +262,7 @@ bool PostProcessSetup()
 	srDesc.Texture2D.MipLevels = 1;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView( SceneTexture, &srDesc, &SceneShaderResource ))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTexture, &srDesc, &PostProcessShaderResource))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTexture2, &srDesc, &PostProcessShaderResource2))) return false;
 	
 	// Load post-processing support textures
 	if (FAILED( D3DX10CreateShaderResourceViewFromFile( g_pd3dDevice, (MediaFolder + "Noise.png").c_str() ,   NULL, NULL, &NoiseMap,   NULL ) )) return false;
@@ -308,9 +314,11 @@ void PostProcessShutdown()
     if (NoiseMap)            NoiseMap->Release();
 	if (SceneShaderResource) SceneShaderResource->Release();
 	if (PostProcessShaderResource) PostProcessShaderResource->Release();
+	if (PostProcessShaderResource2) PostProcessShaderResource2->Release();
 	if (SceneRenderTarget)   SceneRenderTarget->Release();
 	if (SceneTexture)        SceneTexture->Release();
 	if (PostProcessTexture) PostProcessTexture->Release();
+	if (PostProcessTexture2) PostProcessTexture2->Release();
 }
 
 //*****************************************************************************
@@ -518,24 +526,34 @@ void RenderScene()
 	// Repeat the following process for each Post-Process effect in the array
 	for (int i = 0, size = FullScreenFilters.size(); i < size; ++i)
 	{
+		g_pd3dDevice->ClearDepthStencilView(DepthStencilView, D3D10_CLEAR_DEPTH, 1.0f, 0);
 		// Select the back buffer to use for rendering (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
 		// We have to set the render target depending on what index we're in
 		if (i % 2 == 0)
 		{
+			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTarget, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
+			if (i == 0)
+			{
+				// First effect
+				PostProcessMapVar->SetResource(SceneShaderResource);
+			}
+			else
+			{
+				PostProcessMapVar->SetResource(PostProcessShaderResource);
+			}
+		}
+		else
+		{
+			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTarget2, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
+			PostProcessMapVar->SetResource(PostProcessShaderResource2);
+		}
+
+		if (i == FullScreenFilters.size() - 1)
+		{
+			// Last effect
 			g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
 		}
-		else
-		{
-			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTarget, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
-		}
-		if (i == 0)
-		{
-			PostProcessMapVar->SetResource(SceneShaderResource);
-		}
-		else
-		{
-			PostProcessMapVar->SetResource(PostProcessShaderResource);
-		}
+
 
 		// Prepare shader settings for the current full screen filter
 		SelectPostProcess(FullScreenFilters[i]);
