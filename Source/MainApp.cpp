@@ -30,6 +30,7 @@ IDXGISwapChain*         SwapChain = NULL;
 ID3D10Texture2D*        DepthStencil = NULL;
 ID3D10DepthStencilView* DepthStencilView = NULL;
 ID3D10RenderTargetView* BackBufferRenderTarget = NULL;
+ID3D10RenderTargetView* PostProcessingRenderTarget = NULL;
 
 // D3DX font for OSD
 ID3DX10Font* OSDFont = NULL;
@@ -105,7 +106,6 @@ bool D3DSetup( HWND hWnd )
 	pBackBuffer->Release();
 	if( FAILED( hr ) ) return false;
 
-
 	// Create a texture (bitmap) to use for a depth buffer for the main viewport
 	D3D10_TEXTURE2D_DESC descDepth;
 	descDepth.Width = BackBufferWidth;
@@ -149,6 +149,7 @@ void D3DShutdown()
 	if (OSDFont)                OSDFont->Release();
 	if (DepthStencilView)       DepthStencilView->Release();
 	if (BackBufferRenderTarget) BackBufferRenderTarget->Release();
+	if (PostProcessingRenderTarget) PostProcessingRenderTarget->Release();
 	if (DepthStencil)           DepthStencil->Release();
 	if (SwapChain)              SwapChain->Release();
 	if (g_pd3dDevice)           g_pd3dDevice->Release();

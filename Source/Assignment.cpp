@@ -45,7 +45,7 @@ enum PostProcesses
 
 // Currently used post process
 PostProcesses FullScreenFilter = Copy;
-vector<PostProcesses> FullScreenFilters;
+vector<PostProcesses> FullScreenFilters = { Gradient, Copy };
 
 // Post-process settings
 float BurnLevel = 0.0f;
@@ -126,6 +126,9 @@ extern ID3D10Device*           g_pd3dDevice;
 extern IDXGISwapChain*         SwapChain;
 extern ID3D10DepthStencilView* DepthStencilView;
 extern ID3D10RenderTargetView* BackBufferRenderTarget;
+extern ID3D10RenderTargetView* PostProcessingRenderTarget;
+ID3D10ShaderResourceView* PostProcessShaderResource = NULL;
+ID3D10Texture2D*          PostProcessTexture = NULL;
 extern ID3DX10Font*            OSDFont;
 
 // Actual viewport dimensions (fullscreen or windowed)
@@ -240,9 +243,11 @@ bool PostProcessSetup()
 	textureDesc.CPUAccessFlags = 0;
 	textureDesc.MiscFlags = 0;
 	if (FAILED(g_pd3dDevice->CreateTexture2D( &textureDesc, NULL, &SceneTexture ))) return false;
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTexture))) return false;
 
 	// Get a "view" of the texture as a render target - giving us an interface for rendering to the texture
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView( SceneTexture, NULL, &SceneRenderTarget ))) return false;
+	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTexture, NULL, &PostProcessingRenderTarget))) return false;
 
 	// And get a shader-resource "view" - giving us an interface for passing the texture to shaders
 	D3D10_SHADER_RESOURCE_VIEW_DESC srDesc;
@@ -251,6 +256,7 @@ bool PostProcessSetup()
 	srDesc.Texture2D.MostDetailedMip = 0;
 	srDesc.Texture2D.MipLevels = 1;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView( SceneTexture, &srDesc, &SceneShaderResource ))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTexture, &srDesc, &PostProcessShaderResource))) return false;
 	
 	// Load post-processing support textures
 	if (FAILED( D3DX10CreateShaderResourceViewFromFile( g_pd3dDevice, (MediaFolder + "Noise.png").c_str() ,   NULL, NULL, &NoiseMap,   NULL ) )) return false;
@@ -301,8 +307,10 @@ void PostProcessShutdown()
     if (BurnMap)             BurnMap->Release();
     if (NoiseMap)            NoiseMap->Release();
 	if (SceneShaderResource) SceneShaderResource->Release();
+	if (PostProcessShaderResource) PostProcessShaderResource->Release();
 	if (SceneRenderTarget)   SceneRenderTarget->Release();
 	if (SceneTexture)        SceneTexture->Release();
+	if (PostProcessTexture) PostProcessTexture->Release();
 }
 
 //*****************************************************************************
@@ -511,8 +519,23 @@ void RenderScene()
 	for (int i = 0, size = FullScreenFilters.size(); i < size; ++i)
 	{
 		// Select the back buffer to use for rendering (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
-		g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
-		SceneTextureVar->SetResource(SceneShaderResource);
+		// We have to set the render target depending on what index we're in
+		if (i % 2 == 0)
+		{
+			g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
+		}
+		else
+		{
+			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTarget, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
+		}
+		if (i == 0)
+		{
+			PostProcessMapVar->SetResource(SceneShaderResource);
+		}
+		else
+		{
+			PostProcessMapVar->SetResource(PostProcessShaderResource);
+		}
 
 		// Prepare shader settings for the current full screen filter
 		SelectPostProcess(FullScreenFilters[i]);
@@ -538,6 +561,7 @@ void RenderScene()
 	// approach works even better with "bucket" rendering, where post-process shaders are held in a separate bucket - making it unnecessary to "RenderAllEntities" as 
 	// we are doing here.
 
+	g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView);
 	// NOTE: Post-processing - need to set the back buffer as a render target. Relying on the fact that the section above already did that
 	// Polygon post-processing occurs in the scene rendering code (RenderMethod.cpp) - so pass over the scene texture and viewport dimensions for the scene post-processing materials/shaders
 	SetSceneTexture( SceneShaderResource, BackBufferWidth, BackBufferHeight );

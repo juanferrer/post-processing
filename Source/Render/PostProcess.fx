@@ -140,10 +140,11 @@ float4 PPTintShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 	return float4( ppColour, 1.0f );
 }
 
+// Post-processing shader that tints the scene texture to a gradient
 float4 PPGradientShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
 	float3 heightColour = lerp(TintColour, TintColour2, ppIn.UVScene.y);
-	float3 ppColour = SceneTexture.Sample(PointClamp, ppIn.UVScene) * heightColour;
+	float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene) * heightColour;
 	return float4(ppColour, 1.0f);
 }
 
