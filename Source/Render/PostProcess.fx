@@ -127,7 +127,7 @@ PS_POSTPROCESS_INPUT PPQuad(VS_POSTPROCESS_INPUT vIn)
 // Post-processing shader that simply outputs the scene texture, i.e. no post-processing. A waste of processing, but illustrative
 float4 PPCopyShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 {
-	float3 ppColour = SceneTexture.Sample( PointClamp, ppIn.UVScene );
+	float3 ppColour = PostProcessMap.Sample( PointClamp, ppIn.UVScene );
 	return float4( ppColour, 1.0f );
 }
 
@@ -276,7 +276,7 @@ float4 PPSpiralShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 	float2 rotOffsetUV = mul( centreOffsetUV, rot2D );
 
 	// Sample texture at new position (centre UV + rotated UV offset)
-    float3 ppColour = SceneTexture.Sample( BilinearClamp, centreUV + rotOffsetUV );
+    float3 ppColour = PostProcessMap.Sample( BilinearClamp, centreUV + rotOffsetUV );
 
 	// Calculate alpha to display the effect in a softened circle, could use a texture rather than calculations for the same task.
 	// Uses the second set of area texture coordinates, which range from (0,0) to (1,1) over the area being processed
@@ -316,6 +316,11 @@ float4 PPHeatHazeShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
     ppAlpha *= saturate(SinX * SinY * 0.33f + 0.55f);
 
 	return float4( ppColour, ppAlpha );
+}
+
+float4 PPBlurShader(PS_POSTPROCESS_INPUT ppIn):SV_Target
+{
+
 }
 
 
@@ -482,4 +487,19 @@ technique10 PPHeatHaze
 		SetRasterizerState( CullBack ); 
 		SetDepthStencilState( DepthWritesOff, 0 );
      }
+}
+
+// Gaussian blur
+technique10 PPBlur
+{
+	pass P0
+	{
+		SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+		SetGeometryShader(NULL);
+		SetPixelShader(CompileShader(ps_4_0, PPBlurShader()));
+
+		SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+		SetRasterizerState(CullBack);
+		SetDepthStencilState(DepthWritesOff, 0);
+	}
 }

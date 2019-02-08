@@ -40,12 +40,14 @@ enum PostProcesses
 	Distort,
 	Spiral,
 	HeatHaze,
+	Blur,
 	NumPostProcesses
 };
 
 // Currently used post process
 PostProcesses FullScreenFilter = Copy;
-vector<PostProcesses> FullScreenFilters = { Gradient, Copy };
+vector<PostProcesses> FullScreenFilters = { Copy };
+int PostProcessIndex = 0;
 
 // Post-process settings
 float BurnLevel = 0.0f;
@@ -54,6 +56,7 @@ float SpiralTimer = 0.0f;
 const float SpiralSpeed = 1.0f;
 float HeatHazeTimer = 0.0f;
 const float HeatHazeSpeed = 1.0f;
+float BlurLevel = 0.5f;
 
 
 // Separate effect file for full screen & area post-processes. Not necessary to use a separate file, but convenient given the architecture of this lab
@@ -95,6 +98,7 @@ ID3D10EffectScalarVariable* DistortLevelVar = NULL;
 ID3D10EffectScalarVariable* BurnLevelVar = NULL;
 ID3D10EffectScalarVariable* SpiralTimerVar = NULL;
 ID3D10EffectScalarVariable* HeatHazeTimerVar = NULL;
+ID3D10EffectScalarVariable* BlurLevelVar = NULL;
 
 
 //*****************************************************************************
@@ -126,12 +130,9 @@ extern ID3D10Device*           g_pd3dDevice;
 extern IDXGISwapChain*         SwapChain;
 extern ID3D10DepthStencilView* DepthStencilView;
 extern ID3D10RenderTargetView* BackBufferRenderTarget;
-extern ID3D10RenderTargetView* PostProcessingRenderTarget;
-extern ID3D10RenderTargetView* PostProcessingRenderTarget2;
-ID3D10ShaderResourceView* PostProcessShaderResource = NULL;
-ID3D10ShaderResourceView* PostProcessShaderResource2 = NULL;
-ID3D10Texture2D*          PostProcessTexture = NULL;
-ID3D10Texture2D*          PostProcessTexture2 = NULL;
+extern ID3D10RenderTargetView* PostProcessingRenderTargets[];
+ID3D10ShaderResourceView* PostProcessShaderResources[2];
+ID3D10Texture2D*          PostProcessTextures[2];
 extern ID3DX10Font*            OSDFont;
 
 // Actual viewport dimensions (fullscreen or windowed)
@@ -246,13 +247,13 @@ bool PostProcessSetup()
 	textureDesc.CPUAccessFlags = 0;
 	textureDesc.MiscFlags = 0;
 	if (FAILED(g_pd3dDevice->CreateTexture2D( &textureDesc, NULL, &SceneTexture ))) return false;
-	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTexture))) return false;
-	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTexture2))) return false;
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTextures[0]))) return false;
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTextures[1]))) return false;
 
 	// Get a "view" of the texture as a render target - giving us an interface for rendering to the texture
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView( SceneTexture, NULL, &SceneRenderTarget ))) return false;
-	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTexture, NULL, &PostProcessingRenderTarget))) return false;
-	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTexture2, NULL, &PostProcessingRenderTarget2))) return false;
+	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTextures[0], NULL, &PostProcessingRenderTargets[0]))) return false;
+	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTextures[1], NULL, &PostProcessingRenderTargets[1]))) return false;
 
 	// And get a shader-resource "view" - giving us an interface for passing the texture to shaders
 	D3D10_SHADER_RESOURCE_VIEW_DESC srDesc;
@@ -261,8 +262,8 @@ bool PostProcessSetup()
 	srDesc.Texture2D.MostDetailedMip = 0;
 	srDesc.Texture2D.MipLevels = 1;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView( SceneTexture, &srDesc, &SceneShaderResource ))) return false;
-	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTexture, &srDesc, &PostProcessShaderResource))) return false;
-	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTexture2, &srDesc, &PostProcessShaderResource2))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTextures[0], &srDesc, &PostProcessShaderResources[0]))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTextures[1], &srDesc, &PostProcessShaderResources[1]))) return false;
 	
 	// Load post-processing support textures
 	if (FAILED( D3DX10CreateShaderResourceViewFromFile( g_pd3dDevice, (MediaFolder + "Noise.png").c_str() ,   NULL, NULL, &NoiseMap,   NULL ) )) return false;
@@ -302,6 +303,7 @@ bool PostProcessSetup()
 	BurnLevelVar         = PPEffect->GetVariableByName( "BurnLevel" )->AsScalar();
 	SpiralTimerVar       = PPEffect->GetVariableByName( "SpiralTimer" )->AsScalar();
 	HeatHazeTimerVar     = PPEffect->GetVariableByName( "HeatHazeTimer" )->AsScalar();
+	BlurLevelVar		 = PPEffect->GetVariableByName( "BlurLevel" )->AsScalar();
 
 	return true;
 }
@@ -313,12 +315,12 @@ void PostProcessShutdown()
     if (BurnMap)             BurnMap->Release();
     if (NoiseMap)            NoiseMap->Release();
 	if (SceneShaderResource) SceneShaderResource->Release();
-	if (PostProcessShaderResource) PostProcessShaderResource->Release();
-	if (PostProcessShaderResource2) PostProcessShaderResource2->Release();
+	if (PostProcessShaderResources[0]) PostProcessShaderResources[0]->Release();
+	if (PostProcessShaderResources[1]) PostProcessShaderResources[1]->Release();
 	if (SceneRenderTarget)   SceneRenderTarget->Release();
 	if (SceneTexture)        SceneTexture->Release();
-	if (PostProcessTexture) PostProcessTexture->Release();
-	if (PostProcessTexture2) PostProcessTexture2->Release();
+	if (PostProcessTextures[0]) PostProcessTextures[0]->Release();
+	if (PostProcessTextures[1]) PostProcessTextures[1]->Release();
 }
 
 //*****************************************************************************
@@ -400,6 +402,13 @@ void SelectPostProcess( PostProcesses filter )
 		{
 			// Set the amount of spiral - use a tweaked cos wave to animate
 			HeatHazeTimerVar->SetFloat( HeatHazeTimer );
+			break;
+		}
+
+		case Blur:
+		{
+			// Set the level of blur
+			BlurLevelVar->SetFloat(BlurLevel);
 			break;
 		}
 	}
@@ -526,32 +535,27 @@ void RenderScene()
 	// Repeat the following process for each Post-Process effect in the array
 	for (int i = 0, size = FullScreenFilters.size(); i < size; ++i)
 	{
-		g_pd3dDevice->ClearDepthStencilView(DepthStencilView, D3D10_CLEAR_DEPTH, 1.0f, 0);
 		// Select the back buffer to use for rendering (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
 		// We have to set the render target depending on what index we're in
-		if (i % 2 == 0)
+		if (i == size - 1)
 		{
-			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTarget, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
-			if (i == 0)
-			{
-				// First effect
-				PostProcessMapVar->SetResource(SceneShaderResource);
-			}
-			else
-			{
-				PostProcessMapVar->SetResource(PostProcessShaderResource);
-			}
+			// Last effect
+			g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView);
 		}
 		else
 		{
-			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTarget2, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
-			PostProcessMapVar->SetResource(PostProcessShaderResource2);
+			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
 		}
-
-		if (i == FullScreenFilters.size() - 1)
+		if (i == 0)
 		{
-			// Last effect
-			g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView); // No need to clear the back-buffer, we're going to overwrite it all
+			// First effect
+			PostProcessMapVar->SetResource(SceneShaderResource);
+		}
+		else
+		{
+			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
+			// Increase the index only when using the shader resources
+			PostProcessIndex = (PostProcessIndex + 1) % 2;
 		}
 
 
@@ -702,25 +706,23 @@ void UpdateScene( float updateTime )
 	if (KeyHit( Key_F5 )) CameraMoveSpeed = 640.0f;
 
 	// Choose post-process
-	/*if (KeyHit( Key_1 )) FullScreenFilter = Copy;
-	if (KeyHit( Key_2 )) FullScreenFilter = Gradient;
-	if (KeyHit( Key_3 )) FullScreenFilter = GreyNoise;
-	if (KeyHit( Key_4 )) FullScreenFilter = Burn;
-	if (KeyHit( Key_5 )) FullScreenFilter = Distort;
-	if (KeyHit( Key_6 )) FullScreenFilter = Spiral;
-	if (KeyHit( Key_7 )) FullScreenFilter = HeatHaze;*/
+	if (KeyHit(Key_Back))
+	{
+		if (FullScreenFilters.size() > 1)
+		{
+			// Only delete last filter if there's at least two
+			FullScreenFilters.pop_back();
+		}
+	}
+
 	if (KeyHit(Key_1))
 	{
-		auto it = std::find(FullScreenFilters.begin(), FullScreenFilters.end(), Gradient);
-		if (it != FullScreenFilters.end())
-		{
-			// We already have this effect active. Remove it
-			FullScreenFilters.erase(it);
-		}
-		else
-		{
-			FullScreenFilters.push_back(Gradient);
-		}
+		FullScreenFilters.push_back(Gradient);
+	}
+
+	if (KeyHit(Key_2))
+	{
+		FullScreenFilters.push_back(Blur);
 	}
 
 	// Rotate cube and attach light to it

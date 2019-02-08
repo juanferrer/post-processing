@@ -30,8 +30,8 @@ IDXGISwapChain*         SwapChain = NULL;
 ID3D10Texture2D*        DepthStencil = NULL;
 ID3D10DepthStencilView* DepthStencilView = NULL;
 ID3D10RenderTargetView* BackBufferRenderTarget = NULL;
-ID3D10RenderTargetView* PostProcessingRenderTarget = NULL;
-ID3D10RenderTargetView* PostProcessingRenderTarget2 = NULL;
+ID3D10RenderTargetView* PostProcessingRenderTargets[2];// = NULL;
+//ID3D10RenderTargetView* PostProcessingRenderTarget2 = NULL;
 
 // D3DX font for OSD
 ID3DX10Font* OSDFont = NULL;
@@ -150,8 +150,8 @@ void D3DShutdown()
 	if (OSDFont)                OSDFont->Release();
 	if (DepthStencilView)       DepthStencilView->Release();
 	if (BackBufferRenderTarget) BackBufferRenderTarget->Release();
-	if (PostProcessingRenderTarget) PostProcessingRenderTarget->Release();
-	if (PostProcessingRenderTarget2) PostProcessingRenderTarget2->Release();
+	if (PostProcessingRenderTargets[0]) PostProcessingRenderTargets[0]->Release();
+	if (PostProcessingRenderTargets[1]) PostProcessingRenderTargets[1]->Release();
 	if (DepthStencil)           DepthStencil->Release();
 	if (SwapChain)              SwapChain->Release();
 	if (g_pd3dDevice)           g_pd3dDevice->Release();
