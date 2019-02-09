@@ -318,9 +318,33 @@ float4 PPHeatHazeShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 	return float4( ppColour, ppAlpha );
 }
 
-float4 PPBlurShader(PS_POSTPROCESS_INPUT ppIn):SV_Target
+// Post-processing shader that applies a gaussian blur in X
+float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) :SV_Target
 {
+	float3 ppColour = float3(0, 0, 0);
+	// Needs to add the weighted value of all neighbouring pixels in X
+	float kernel[5] = {0.05, 0.1, 0.2, 0.1, 0.05};
+	int kernelSize = 5;
 
+	int y = ppIn.UVScene.y;
+
+	for (int i = 0; i < kernelSize; ++i)
+	{
+		ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x + (i - kernelSize / 2), y) * kernel[i]) / kernelSize;
+	}
+	
+	return (ppColour, 1.0f);
+}
+
+// Post-processing shader that applies a gaussian blur in Y
+float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn):SV_Target
+{
+		float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
+		// kernelSide: Length of the side
+
+
+
+		return (ppColour, 1.0f);
 }
 
 
@@ -489,17 +513,27 @@ technique10 PPHeatHaze
      }
 }
 
-// Gaussian blur
+// Two-pass Gaussian blur
 technique10 PPBlur
 {
 	pass P0
 	{
 		SetVertexShader(CompileShader(vs_4_0, PPQuad()));
 		SetGeometryShader(NULL);
-		SetPixelShader(CompileShader(ps_4_0, PPBlurShader()));
+		SetPixelShader(CompileShader(ps_4_0, PPGaussianBlurHorizontalShader()));
 
 		SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
 	}
+	/*pass P1
+	{
+		SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+		SetGeometryShader(NULL);
+		SetPixelShader(CompileShader(ps_4_0, PPGaussianBlurVerticalShader()));
+
+		SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+		SetRasterizerState(CullBack);
+		SetDepthStencilState(DepthWritesOff, 0);
+	}*/
 }

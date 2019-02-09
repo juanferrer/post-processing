@@ -46,7 +46,7 @@ enum PostProcesses
 
 // Currently used post process
 PostProcesses FullScreenFilter = Copy;
-vector<PostProcesses> FullScreenFilters = { Copy };
+vector<PostProcesses> FullScreenFilters = { Copy, Blur };
 int PostProcessIndex = 0;
 
 // Post-process settings
@@ -56,14 +56,14 @@ float SpiralTimer = 0.0f;
 const float SpiralSpeed = 1.0f;
 float HeatHazeTimer = 0.0f;
 const float HeatHazeSpeed = 1.0f;
-float BlurLevel = 0.5f;
+float BlurLevel = 3;
 
 
 // Separate effect file for full screen & area post-processes. Not necessary to use a separate file, but convenient given the architecture of this lab
 ID3D10Effect* PPEffect;
 
 // Technique name for each post-process
-const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze" };
+const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBlur" };
 
 // Technique pointers for each post-process
 ID3D10EffectTechnique* PPTechniques[NumPostProcesses];
@@ -407,8 +407,36 @@ void SelectPostProcess( PostProcesses filter )
 
 		case Blur:
 		{
-			// Set the level of blur
-			BlurLevelVar->SetFloat(BlurLevel);
+			const double pi = 3.14159265359;
+			const double e = 2.71828182846;
+			const double sigma = BlurLevel;
+			// Generate 5x5 kernel for weights
+			//int kernelSize = ((int)Ceil(sigma) * 2) + 1;
+			const int kernelSize = 5;
+			double kernel[kernelSize];
+			double sum = 0;
+
+			// TODO: Simplify (2*sigma^2)
+			auto gaussianFunction = [pi, sigma, e](float x)
+			{
+				// r = 2 * sigma ^ 2
+				double r = 2.0 * sigma * sigma;
+				return (1.0 / sqrt(r * pi)) * pow(e, -((x * x)) / r);
+			};
+
+			for (int i = 0; i < kernelSize; ++i)
+			{
+				// TODO: Values can go from 0 - 2, since 3 and 4 are the same as 0 and 1 respectively
+				kernel[i] = gaussianFunction(i - (kernelSize / 2));
+				sum += kernel[i];
+			}
+
+			for (int i = 0; i < kernelSize; ++i)
+			{
+					// And normalise the kernel
+					kernel[i] /= sum;
+			}
+
 			break;
 		}
 	}
@@ -683,6 +711,9 @@ void RenderSceneText()
 		break;
 	case HeatHaze: 
 		outText << "Heat Haze";
+		break;
+	case Blur:
+		outText << "Blur";
 		break;
 	}
 	RenderText( outText.str(),  0, 32,  1.0f, 1.0f, 1.0f );
