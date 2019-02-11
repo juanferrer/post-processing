@@ -45,7 +45,6 @@ enum PostProcesses
 };
 
 // Currently used post process
-PostProcesses FullScreenFilter = Copy;
 vector<PostProcesses> FullScreenFilters = { Copy, Blur };
 int PostProcessIndex = 0;
 
@@ -98,7 +97,8 @@ ID3D10EffectScalarVariable* DistortLevelVar = NULL;
 ID3D10EffectScalarVariable* BurnLevelVar = NULL;
 ID3D10EffectScalarVariable* SpiralTimerVar = NULL;
 ID3D10EffectScalarVariable* HeatHazeTimerVar = NULL;
-ID3D10EffectScalarVariable* BlurLevelVar = NULL;
+ID3D10EffectMatrixVariable* KernelVar = NULL;
+ID3D10EffectScalarVariable* KernelSizeVar = NULL;
 
 
 //*****************************************************************************
@@ -303,7 +303,8 @@ bool PostProcessSetup()
 	BurnLevelVar         = PPEffect->GetVariableByName( "BurnLevel" )->AsScalar();
 	SpiralTimerVar       = PPEffect->GetVariableByName( "SpiralTimer" )->AsScalar();
 	HeatHazeTimerVar     = PPEffect->GetVariableByName( "HeatHazeTimer" )->AsScalar();
-	BlurLevelVar		 = PPEffect->GetVariableByName( "BlurLevel" )->AsScalar();
+	KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsMatrix();
+	KernelSizeVar		 = PPEffect->GetVariableByName("KernelSize")->AsScalar();
 
 	return true;
 }
@@ -412,7 +413,7 @@ void SelectPostProcess( PostProcesses filter )
 			const double sigma = BlurLevel;
 			// Generate 5x5 kernel for weights
 			//int kernelSize = ((int)Ceil(sigma) * 2) + 1;
-			const int kernelSize = 5;
+			const int kernelSize = 16;
 			double kernel[kernelSize];
 			double sum = 0;
 
@@ -436,6 +437,27 @@ void SelectPostProcess( PostProcesses filter )
 					// And normalise the kernel
 					kernel[i] /= sum;
 			}
+
+			D3DXMATRIX kernelMatrix;
+			kernelMatrix._11 = kernel[0];
+			kernelMatrix._12 = kernel[1];
+			kernelMatrix._13 = kernel[2];
+			kernelMatrix._14 = kernel[4];
+			kernelMatrix._21 = kernel[5];
+			kernelMatrix._22 = kernel[6];
+			kernelMatrix._23 = kernel[7];
+			kernelMatrix._24 = kernel[8];
+			kernelMatrix._31 = kernel[9];
+			kernelMatrix._32 = kernel[10];
+			kernelMatrix._33 = kernel[11];
+			kernelMatrix._34 = kernel[12];
+			kernelMatrix._41 = kernel[13];
+			kernelMatrix._42 = kernel[14];
+			kernelMatrix._43 = kernel[15];
+			kernelMatrix._44 = kernel[16];
+
+			KernelVar->SetMatrix((float*)kernelMatrix);
+			KernelSizeVar->SetInt(kernelSize);
 
 			break;
 		}
@@ -563,6 +585,7 @@ void RenderScene()
 	// Repeat the following process for each Post-Process effect in the array
 	for (int i = 0, size = FullScreenFilters.size(); i < size; ++i)
 	{
+		//g_pd3dDevice->ClearDepthStencilView(DepthStencilView, D3D10_CLEAR_DEPTH, 1.0f, 0);
 		// Select the back buffer to use for rendering (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
 		// We have to set the render target depending on what index we're in
 		if (i == size - 1)
@@ -645,7 +668,7 @@ void RenderScene()
 
 	// These two lines unbind the scene texture from the shader to stop DirectX issuing a warning when we try to render to it again next frame
 	SceneTextureVar->SetResource( 0 );
-	PPTechniques[FullScreenFilter]->GetPassByIndex(0)->Apply(0);
+	PPTechniques[FullScreenFilters[0]]->GetPassByIndex(0)->Apply(0);
 
 	// Render UI elements last - don't want them post-processed
 	RenderSceneText();
@@ -686,7 +709,7 @@ void RenderSceneText()
 
 	// Output post-process name
 	outText << "Fullscreen Post-Process: ";
-	switch (FullScreenFilter)
+	switch (FullScreenFilters[0])
 	{
 	case Copy: 
 		outText << "Copy";

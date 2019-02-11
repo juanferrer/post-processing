@@ -306,7 +306,7 @@ float4 PSPixelLit( VS_LIGHTING_OUTPUT vOut ) : SV_Target
 	
 	// Combine maps and lighting for final pixel colour
 	float4 combinedColour;
-	combinedColour.rgb = DiffuseColour * diffuseLight + SpecularColour * specularLight;
+    combinedColour.rgb = (float3) DiffuseColour * diffuseLight + (float3) SpecularColour * specularLight;
 	combinedColour.a = 1.0f; // No alpha processing in this shader, so just set it to 1
 
 	return combinedColour;
@@ -362,7 +362,7 @@ float4 PSPixelLitTex( VS_LIGHTINGTEX_OUTPUT vOut ) : SV_Target
 	
 	// Combine maps and lighting for final pixel colour
 	float4 combinedColour;
-	combinedColour.rgb = diffuseMaterial * diffuseLight + specularMaterial * specularLight;
+    combinedColour.rgb = (float3) diffuseMaterial * diffuseLight + specularMaterial * specularLight;
 	combinedColour.a = 1.0f; // No alpha processing in this shader, so just set it to 1
 
 	return combinedColour;
@@ -392,7 +392,7 @@ float4 PSNormalMap( VS_NORMALMAP_OUTPUT vOut ) : SV_Target
 
 	// Now convert the texture normal into model space using the inverse tangent matrix, and then convert into world space using the world
 	// matrix. Normalise, because of the effects of texture filtering and in case the world matrix contains scaling
-	float3 worldNormal = normalize( mul( mul( textureNormal, invTangentMatrix ), WorldMatrix ) );
+    float3 worldNormal = normalize(mul(mul(textureNormal, invTangentMatrix), (float3x4) WorldMatrix));
 
 
 	///////////////////////
@@ -436,7 +436,7 @@ float4 PSNormalMap( VS_NORMALMAP_OUTPUT vOut ) : SV_Target
 	
 	// Combine maps and lighting for final pixel colour
 	float4 combinedColour;
-	combinedColour.rgb = diffuseMaterial * diffuseLight + specularMaterial * specularLight;
+    combinedColour.rgb = (float3) diffuseMaterial * diffuseLight + specularMaterial * specularLight;
 	combinedColour.a = 1.0f; // No alpha processing in this shader, so just set it to 1
 
 	return combinedColour;
@@ -490,7 +490,7 @@ float4 PSParallaxMap( VS_NORMALMAP_OUTPUT vOut ) : SV_Target
 
 	// Now convert the texture normal into model space using the inverse tangent matrix, and then convert into world space using the world
 	// matrix. Normalise, because of the effects of texture filtering and in case the world matrix contains scaling
-	float3 worldNormal = normalize( mul( mul( textureNormal, invTangentMatrix ), WorldMatrix ) );
+    float3 worldNormal = normalize(mul(mul(textureNormal, invTangentMatrix), (float3x4) WorldMatrix));
 
 
 	///////////////////////
@@ -534,7 +534,7 @@ float4 PSParallaxMap( VS_NORMALMAP_OUTPUT vOut ) : SV_Target
 	
 	// Combine maps and lighting for final pixel colour
 	float4 combinedColour;
-	combinedColour.rgb = diffuseMaterial * diffuseLight + specularMaterial * specularLight;
+    combinedColour.rgb = (float3) diffuseMaterial * diffuseLight + specularMaterial * specularLight;
 	combinedColour.a = 1.0f; // No alpha processing in this shader, so just set it to 1
 
 	return combinedColour;
@@ -764,7 +764,7 @@ float4 PPCutGlassShader( VS_NORMALMAP_OUTPUT vOut ) : SV_Target
 
 	// Now convert the texture normal into model space using the inverse tangent matrix, and then convert into world space using the world
 	// matrix. Normalise, because of the effects of texture filtering and in case the world matrix contains scaling
-	float3 worldNormal = normalize( mul( mul( textureNormal, invTangentMatrix ), WorldMatrix ) );
+    float3 worldNormal = normalize(mul(mul(textureNormal, invTangentMatrix), (float3x4) WorldMatrix));
 
 
 	///////////////////////
@@ -796,14 +796,13 @@ float4 PPCutGlassShader( VS_NORMALMAP_OUTPUT vOut ) : SV_Target
 	//***********************************
 	// Get scene texture colour (with distortion) to blend with the cut glass texture
 
-	//***TODO - Fill in the float2 UVScene with the UV coordinates of this pixel (same as start part of Tint code you filled in above)
+	// Fill in the float2 UVScene with the UV coordinates of this pixel (same as start part of Tint code you filled in above)
 	float2 sceneUV = float2(vOut.ProjPos.x / ViewportWidth, vOut.ProjPos.y / ViewportHeight);
-	//...
 
 	// Offset UVs in scene texture to emulate refraction. Transform surface normal (from normal mapping) into camera space,
 	// and use this as a direction to offset UV calculated above. This is just a simple effect - not correct refraction
 	// Effect is reduced based on z distance
-	float3 cameraNormal = mul( worldNormal, ViewMatrix );
+    float3 cameraNormal = mul(worldNormal, (float3x4) ViewMatrix);
 	float2 offsetSceneCoord  = sceneUV - RefractionStrength * cameraNormal.xy * (1 - vOut.ProjPos.z);
 
 	// Sample scene texture in offset position to distort the scene visible through the material
@@ -827,7 +826,7 @@ float4 PPCutGlassShader( VS_NORMALMAP_OUTPUT vOut ) : SV_Target
 	// Combine colours 
 
 	// Combine various textures (scene, diffuse and specular) together with lighting to get final pixel colour
-	float3 ppColour = lerp( diffuseMaterial, sceneColour, diffuseTex.a ) * diffuseLight + specularMaterial * specularLight;
+    float3 ppColour = (float3) lerp(diffuseMaterial, sceneColour, diffuseTex.a) * diffuseLight + specularMaterial * specularLight;
 
 	return float4(ppColour, 1.0f);
 }

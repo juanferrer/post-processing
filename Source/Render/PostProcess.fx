@@ -22,6 +22,8 @@ float  DistortLevel;
 float  BurnLevel;
 float  SpiralTimer;
 float  HeatHazeTimer;
+float4x4 Kernel;
+int KernelSize;
 
 // Texture maps
 Texture2D SceneTexture;   // Texture containing the scene to copy to the full screen quad
@@ -136,7 +138,7 @@ float4 PPCopyShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 float4 PPTintShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 {
 	// Sample the texture colour (look at shader above) and multiply it with the tint colour (variables near top)
-	float3 ppColour = SceneTexture.Sample( PointClamp, ppIn.UVScene ) * TintColour;
+    float3 ppColour = (float3)SceneTexture.Sample(PointClamp, ppIn.UVScene) * TintColour;
 	return float4( ppColour, 1.0f );
 }
 
@@ -144,7 +146,7 @@ float4 PPTintShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 float4 PPGradientShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
 	float3 heightColour = lerp(TintColour, TintColour2, ppIn.UVScene.y);
-	float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene) * heightColour;
+    float3 ppColour = (float3)PostProcessMap.Sample(PointClamp, ppIn.UVScene) * heightColour;
 	return float4(ppColour, 1.0f);
 }
 
@@ -319,32 +321,31 @@ float4 PPHeatHazeShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 }
 
 // Post-processing shader that applies a gaussian blur in X
-float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) :SV_Target
+float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-	float3 ppColour = float3(0, 0, 0);
+    float3 ppColour = float3(0, 0, 0);
 	// Needs to add the weighted value of all neighbouring pixels in X
-	float kernel[5] = {0.05, 0.1, 0.2, 0.1, 0.05};
-	int kernelSize = 5;
 
-	int y = ppIn.UVScene.y;
-
-	for (int i = 0; i < kernelSize; ++i)
+    for (int i = 0; i < KernelSize; ++i)
 	{
-		ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x + (i - kernelSize / 2), y) * kernel[i]) / kernelSize;
-	}
+        ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x + (i - KernelSize / 2), ppIn.UVScene.y)) * (Kernel[i % 4][i / 4]);
+    }
 	
-	return (ppColour, 1.0f);
+	return float4(ppColour, 1.0f);
 }
 
 // Post-processing shader that applies a gaussian blur in Y
 float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn):SV_Target
 {
-		float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
-		// kernelSide: Length of the side
+    float3 ppColour = float3(0, 0, 0);
+	// Needs to add the weighted value of all neighbouring pixels in Y
 
-
-
-		return (ppColour, 1.0f);
+    for (int i = 0; i < KernelSize; ++i)
+    {
+        ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x, ppIn.UVScene.y + (i - KernelSize / 2))) * (Kernel[i % 4][i / 4]);
+    }
+	
+    return float4(ppColour, 1.0f);
 }
 
 
@@ -526,7 +527,7 @@ technique10 PPBlur
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
 	}
-	/*pass P1
+	pass P1
 	{
 		SetVertexShader(CompileShader(vs_4_0, PPQuad()));
 		SetGeometryShader(NULL);
@@ -535,5 +536,5 @@ technique10 PPBlur
 		SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
-	}*/
+	}
 }
