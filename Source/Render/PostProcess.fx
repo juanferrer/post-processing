@@ -16,6 +16,7 @@ float  PPAreaDepth;       // Depth buffer value for area (0.0 nearest to 1.0 fur
 // Other variables used for individual post-processes
 float3 TintColour;
 float3 TintColour2;
+float3 UnderWaterTintColour;
 float2 NoiseScale;
 float2 NoiseOffset;
 float  DistortLevel;
@@ -351,7 +352,7 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 
 float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
+    float3 ppColour = (float3)PostProcessMap.Sample(PointClamp, ppIn.UVScene) * UnderWaterTintColour;
     return float4(ppColour, 1.0f);
 }
 

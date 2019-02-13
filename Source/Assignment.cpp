@@ -46,7 +46,7 @@ enum PostProcesses
 };
 
 // Currently used post process
-vector<PostProcesses> FullScreenFilters = { Copy, Blur };
+vector<PostProcesses> FullScreenFilters = { Copy, UnderWater };
 int PostProcessIndex = 0;
 
 // Post-process settings
@@ -93,6 +93,7 @@ ID3D10EffectScalarVariable* PPAreaDepthVar = NULL;
 // Other variables for individual post-processes
 ID3D10EffectVectorVariable* TintColourVar = NULL;
 ID3D10EffectVectorVariable* TintColour2Var = NULL;
+ID3D10EffectVectorVariable* UnderWaterTintColourVar = NULL;
 ID3D10EffectVectorVariable* NoiseScaleVar = NULL;
 ID3D10EffectVectorVariable* NoiseOffsetVar = NULL;
 ID3D10EffectScalarVariable* DistortLevelVar = NULL;
@@ -319,6 +320,7 @@ bool PostProcessSetup()
 	PPAreaDepthVar       = PPEffect->GetVariableByName( "PPAreaDepth" )->AsScalar();
 	TintColourVar        = PPEffect->GetVariableByName( "TintColour" )->AsVector();
 	TintColour2Var       = PPEffect->GetVariableByName( "TintColour2" )->AsVector();
+	UnderWaterTintColourVar = PPEffect->GetVariableByName("UnderWaterTintColour")->AsVector();
 	NoiseScaleVar        = PPEffect->GetVariableByName( "NoiseScale" )->AsVector();
 	NoiseOffsetVar       = PPEffect->GetVariableByName( "NoiseOffset" )->AsVector();
 	DistortLevelVar      = PPEffect->GetVariableByName( "DistortLevel" )->AsScalar();
@@ -494,7 +496,8 @@ void SelectPostProcess( PostProcesses filter )
 		}
 		case UnderWater:
 		{
-
+			D3DXCOLOR UnderWaterTintColour = D3DXCOLOR(0.0f, 0.0f, 1.0f, 1.0f);
+			UnderWaterTintColourVar->SetRawValue(&UnderWaterTintColour, 0, 12);
 		}
 	}
 }
