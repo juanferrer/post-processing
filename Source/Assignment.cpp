@@ -41,7 +41,8 @@ enum PostProcesses
 	Spiral,
 	HeatHaze,
 	Blur,
-	NumPostProcesses
+	UnderWater,
+	NumPostProcesses,
 };
 
 // Currently used post process
@@ -56,13 +57,14 @@ const float SpiralSpeed = 1.0f;
 float HeatHazeTimer = 0.0f;
 const float HeatHazeSpeed = 1.0f;
 float BlurLevel = 3;
+int KernelSize = 5;
 
 
 // Separate effect file for full screen & area post-processes. Not necessary to use a separate file, but convenient given the architecture of this lab
 ID3D10Effect* PPEffect;
 
 // Technique name for each post-process
-const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBlur" };
+const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBlur", "PPUnderWater" };
 
 // Technique pointers for each post-process
 ID3D10EffectTechnique* PPTechniques[NumPostProcesses];
@@ -97,7 +99,10 @@ ID3D10EffectScalarVariable* DistortLevelVar = NULL;
 ID3D10EffectScalarVariable* BurnLevelVar = NULL;
 ID3D10EffectScalarVariable* SpiralTimerVar = NULL;
 ID3D10EffectScalarVariable* HeatHazeTimerVar = NULL;
-ID3D10EffectMatrixVariable* KernelVar = NULL;
+ID3D10EffectShaderResourceVariable* KernelVar = NULL;
+//ID3D10EffectMatrixVariable* KernelVar = NULL;
+ID3D10ShaderResourceView* KernelRV = NULL;
+ID3D10Texture1D* KernelArray = NULL;
 ID3D10EffectScalarVariable* KernelSizeVar = NULL;
 
 
@@ -233,6 +238,15 @@ void SceneShutdown()
 // Prepare resources required for the post-processing pass
 bool PostProcessSetup()
 {
+	D3D10_TEXTURE1D_DESC arrayDesc;
+	arrayDesc.Width = KernelSize;
+	arrayDesc.MipLevels = 1;
+	arrayDesc.ArraySize = 1;
+	arrayDesc.Format = DXGI_FORMAT_R32_FLOAT;	// 8-bit floats
+	arrayDesc.Usage = D3D10_USAGE_DYNAMIC;
+	arrayDesc.BindFlags = D3D10_BIND_SHADER_RESOURCE;
+	arrayDesc.CPUAccessFlags = D3D10_CPU_ACCESS_WRITE | D3D10_CPU_ACCESS_WRITE;
+	arrayDesc.MiscFlags = 0;
 	// Create the "scene texture" - the texture into which the scene will be rendered in the first pass
 	D3D10_TEXTURE2D_DESC textureDesc;
 	textureDesc.Width  = BackBufferWidth;  // Match views to viewport size
@@ -249,6 +263,7 @@ bool PostProcessSetup()
 	if (FAILED(g_pd3dDevice->CreateTexture2D( &textureDesc, NULL, &SceneTexture ))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTextures[0]))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTextures[1]))) return false;
+	if (FAILED(g_pd3dDevice->CreateTexture1D(&arrayDesc, NULL, &KernelArray))) return false;
 
 	// Get a "view" of the texture as a render target - giving us an interface for rendering to the texture
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView( SceneTexture, NULL, &SceneRenderTarget ))) return false;
@@ -261,9 +276,16 @@ bool PostProcessSetup()
 	srDesc.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE2D;
 	srDesc.Texture2D.MostDetailedMip = 0;
 	srDesc.Texture2D.MipLevels = 1;
+
+	D3D10_SHADER_RESOURCE_VIEW_DESC saDesc;
+	saDesc.Format = arrayDesc.Format;
+	saDesc.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE1D;
+	saDesc.Texture1D.MostDetailedMip = 0;
+	saDesc.Texture1D.MipLevels = 1;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView( SceneTexture, &srDesc, &SceneShaderResource ))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTextures[0], &srDesc, &PostProcessShaderResources[0]))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTextures[1], &srDesc, &PostProcessShaderResources[1]))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(KernelArray, &saDesc, &KernelRV))) return false;
 	
 	// Load post-processing support textures
 	if (FAILED( D3DX10CreateShaderResourceViewFromFile( g_pd3dDevice, (MediaFolder + "Noise.png").c_str() ,   NULL, NULL, &NoiseMap,   NULL ) )) return false;
@@ -303,7 +325,8 @@ bool PostProcessSetup()
 	BurnLevelVar         = PPEffect->GetVariableByName( "BurnLevel" )->AsScalar();
 	SpiralTimerVar       = PPEffect->GetVariableByName( "SpiralTimer" )->AsScalar();
 	HeatHazeTimerVar     = PPEffect->GetVariableByName( "HeatHazeTimer" )->AsScalar();
-	KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsMatrix();
+	KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsShaderResource();
+	//KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsMatrix();
 	KernelSizeVar		 = PPEffect->GetVariableByName("KernelSize")->AsScalar();
 
 	return true;
@@ -322,6 +345,7 @@ void PostProcessShutdown()
 	if (SceneTexture)        SceneTexture->Release();
 	if (PostProcessTextures[0]) PostProcessTextures[0]->Release();
 	if (PostProcessTextures[1]) PostProcessTextures[1]->Release();
+	if (KernelRV) KernelRV->Release();
 }
 
 //*****************************************************************************
@@ -413,9 +437,8 @@ void SelectPostProcess( PostProcesses filter )
 			const double sigma = BlurLevel;
 			// Generate 5x5 kernel for weights
 			//int kernelSize = ((int)Ceil(sigma) * 2) + 1;
-			const int kernelSize = 16;
-			double kernel[kernelSize];
-			double sum = 0;
+			float* kernel = new float[KernelSize];
+			float sum = 0;
 
 			// TODO: Simplify (2*sigma^2)
 			auto gaussianFunction = [pi, sigma, e](float x)
@@ -425,14 +448,20 @@ void SelectPostProcess( PostProcesses filter )
 				return (1.0 / sqrt(r * pi)) * pow(e, -((x * x)) / r);
 			};
 
-			for (int i = 0; i < kernelSize; ++i)
+			// https://docs.microsoft.com/en-us/windows/desktop/api/d3d10/nf-d3d10-id3d10texture1d-map
+			KernelArray->Map(D3D10CalcSubresource(0, 0, 1), D3D10_MAP_WRITE, D3D10_MAP_WRITE, (void**)kernel);
+
+			for (int i = 0; i < KernelSize / 2 + 1; ++i)
 			{
-				// TODO: Values can go from 0 - 2, since 3 and 4 are the same as 0 and 1 respectively
-				kernel[i] = gaussianFunction(i - (kernelSize / 2));
+				// First and last are the same, so are second and second to last, and so on
+				// We can store the value once and only go to the middle of the array (which will be an odd number)
+				float value = gaussianFunction(i - (KernelSize / 2));
+				kernel[i] = value;
+				kernel[(KernelSize - 1 - i)] = value;
 				sum += kernel[i];
 			}
 
-			for (int i = 0; i < kernelSize; ++i)
+			for (int i = 0; i < KernelSize; ++i)
 			{
 					// And normalise the kernel
 					kernel[i] /= sum;
@@ -456,10 +485,16 @@ void SelectPostProcess( PostProcesses filter )
 			kernelMatrix._43 = kernel[15];
 			kernelMatrix._44 = kernel[16];
 
-			KernelVar->SetMatrix((float*)kernelMatrix);
-			KernelSizeVar->SetInt(kernelSize);
-
+			//KernelVar->SetMatrix(kernelMatrix);
+			KernelSizeVar->SetInt(KernelSize);
+			KernelVar->SetResource(KernelRV);
+			//KernelArray->Unmap(D3D10CalcSubresource(0, 0, 1));
+			delete[] kernel;
 			break;
+		}
+		case UnderWater:
+		{
+
 		}
 	}
 }
@@ -586,17 +621,7 @@ void RenderScene()
 	for (int i = 0, size = FullScreenFilters.size(); i < size; ++i)
 	{
 		//g_pd3dDevice->ClearDepthStencilView(DepthStencilView, D3D10_CLEAR_DEPTH, 1.0f, 0);
-		// Select the back buffer to use for rendering (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
-		// We have to set the render target depending on what index we're in
-		if (i == size - 1)
-		{
-			// Last effect
-			g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView);
-		}
-		else
-		{
-			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
-		}
+		// Select the resource texture to use
 		if (i == 0)
 		{
 			// First effect
@@ -607,6 +632,18 @@ void RenderScene()
 			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
 			// Increase the index only when using the shader resources
 			PostProcessIndex = (PostProcessIndex + 1) % 2;
+		}
+		// Select the back buffer to use for rendering (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
+		// We have to set the render target depending on what index we're in
+		if (i == size - 1)
+		{
+			// Last effect
+			g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView);
+		}
+		else
+		{
+			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
+
 		}
 
 
@@ -738,6 +775,9 @@ void RenderSceneText()
 	case Blur:
 		outText << "Blur";
 		break;
+	case UnderWater:
+		outText << "UnderWater";
+		break;
 	}
 	RenderText( outText.str(),  0, 32,  1.0f, 1.0f, 1.0f );
 }
@@ -777,6 +817,10 @@ void UpdateScene( float updateTime )
 	if (KeyHit(Key_2))
 	{
 		FullScreenFilters.push_back(Blur);
+	}
+	if (KeyHit(Key_3))
+	{
+		FullScreenFilters.push_back(UnderWater);
 	}
 
 	// Rotate cube and attach light to it

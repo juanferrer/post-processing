@@ -22,7 +22,8 @@ float  DistortLevel;
 float  BurnLevel;
 float  SpiralTimer;
 float  HeatHazeTimer;
-float4x4 Kernel;
+//float4x4 Kernel;
+Texture1D<float> Kernel;
 int KernelSize;
 
 // Texture maps
@@ -328,23 +329,29 @@ float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 
     for (int i = 0; i < KernelSize; ++i)
 	{
-        ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x + (i - KernelSize / 2), ppIn.UVScene.y)) * (Kernel[i % 4][i / 4]);
+        ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x + (i - KernelSize / 2), ppIn.UVScene.y)) * /*(Kernel[i % 4][i / 4])*/Kernel.Sample(PointClamp, i);
     }
 	
 	return float4(ppColour, 1.0f);
 }
 
 // Post-processing shader that applies a gaussian blur in Y
-float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn):SV_Target
+float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     float3 ppColour = float3(0, 0, 0);
 	// Needs to add the weighted value of all neighbouring pixels in Y
 
     for (int i = 0; i < KernelSize; ++i)
     {
-        ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x, ppIn.UVScene.y + (i - KernelSize / 2))) * (Kernel[i % 4][i / 4]);
+        ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x, ppIn.UVScene.y + (i - KernelSize / 2))) * /*(Kernel[i % 4][i / 4])*/Kernel.Sample(PointClamp, i);
     }
 	
+    return float4(ppColour, 1.0f);
+}
+
+float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
     return float4(ppColour, 1.0f);
 }
 
@@ -527,7 +534,7 @@ technique10 PPBlur
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
 	}
-	pass P1
+	/*pass P1
 	{
 		SetVertexShader(CompileShader(vs_4_0, PPQuad()));
 		SetGeometryShader(NULL);
@@ -536,5 +543,19 @@ technique10 PPBlur
 		SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
-	}
+	}*/
+}
+
+technique10 PPUnderWater
+{
+    pass P0
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPUnderWaterShader()));
+
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
 }
