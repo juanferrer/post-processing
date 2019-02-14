@@ -56,8 +56,9 @@ float SpiralTimer = 0.0f;
 const float SpiralSpeed = 1.0f;
 float HeatHazeTimer = 0.0f;
 const float HeatHazeSpeed = 1.0f;
-float BlurLevel = 3;
-int KernelSize = 5;
+float BlurLevel = 0.8f;
+int BlurRadius = 2;
+int KernelSize = BlurRadius * 2 + 1;
 
 
 // Separate effect file for full screen & area post-processes. Not necessary to use a separate file, but convenient given the architecture of this lab
@@ -103,9 +104,10 @@ ID3D10EffectScalarVariable* HeatHazeTimerVar = NULL;
 ID3D10EffectShaderResourceVariable* KernelVar = NULL;
 //ID3D10EffectMatrixVariable* KernelVar = NULL;
 ID3D10ShaderResourceView* KernelRV = NULL;
-ID3D10Texture1D* KernelArray = NULL;
+ID3D10Texture2D* KernelArray = NULL;
 ID3D10EffectScalarVariable* KernelSizeVar = NULL;
-
+extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of the viewport needed to help access the scene texture (see poly post-processing shaders)
+extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
 
 //*****************************************************************************
 
@@ -239,15 +241,17 @@ void SceneShutdown()
 // Prepare resources required for the post-processing pass
 bool PostProcessSetup()
 {
-	D3D10_TEXTURE1D_DESC arrayDesc;
+	D3D10_TEXTURE2D_DESC arrayDesc;
 	arrayDesc.Width = KernelSize;
+	arrayDesc.Height = 1;	// Since we're passing an array, we only need one row
 	arrayDesc.MipLevels = 1;
 	arrayDesc.ArraySize = 1;
-	arrayDesc.Format = DXGI_FORMAT_R32_FLOAT;	// 8-bit floats
+	arrayDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // RGBA texture (8-bits each)
+	arrayDesc.SampleDesc.Count = 1;
+	arrayDesc.SampleDesc.Quality = 0;
 	arrayDesc.Usage = D3D10_USAGE_DYNAMIC;
 	arrayDesc.BindFlags = D3D10_BIND_SHADER_RESOURCE;
-	arrayDesc.CPUAccessFlags = D3D10_CPU_ACCESS_WRITE | D3D10_CPU_ACCESS_WRITE;
-	arrayDesc.MiscFlags = 0;
+	arrayDesc.CPUAccessFlags = D3D10_CPU_ACCESS_WRITE;
 	// Create the "scene texture" - the texture into which the scene will be rendered in the first pass
 	D3D10_TEXTURE2D_DESC textureDesc;
 	textureDesc.Width  = BackBufferWidth;  // Match views to viewport size
@@ -264,7 +268,7 @@ bool PostProcessSetup()
 	if (FAILED(g_pd3dDevice->CreateTexture2D( &textureDesc, NULL, &SceneTexture ))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTextures[0]))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTextures[1]))) return false;
-	if (FAILED(g_pd3dDevice->CreateTexture1D(&arrayDesc, NULL, &KernelArray))) return false;
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&arrayDesc, NULL, &KernelArray))) return false;
 
 	// Get a "view" of the texture as a render target - giving us an interface for rendering to the texture
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView( SceneTexture, NULL, &SceneRenderTarget ))) return false;
@@ -280,7 +284,7 @@ bool PostProcessSetup()
 
 	D3D10_SHADER_RESOURCE_VIEW_DESC saDesc;
 	saDesc.Format = arrayDesc.Format;
-	saDesc.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE1D;
+	saDesc.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE2D;
 	saDesc.Texture1D.MostDetailedMip = 0;
 	saDesc.Texture1D.MipLevels = 1;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView( SceneTexture, &srDesc, &SceneShaderResource ))) return false;
@@ -328,8 +332,9 @@ bool PostProcessSetup()
 	SpiralTimerVar       = PPEffect->GetVariableByName( "SpiralTimer" )->AsScalar();
 	HeatHazeTimerVar     = PPEffect->GetVariableByName( "HeatHazeTimer" )->AsScalar();
 	KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsShaderResource();
-	//KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsMatrix();
-	KernelSizeVar		 = PPEffect->GetVariableByName("KernelSize")->AsScalar();
+	KernelSizeVar		 = PPEffect->GetVariableByName( "KernelSize" )->AsScalar();
+	ViewportWidthVar	 = PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
+	ViewportHeightVar	 = PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
 
 	return true;
 }
@@ -439,8 +444,8 @@ void SelectPostProcess( PostProcesses filter )
 			const double sigma = BlurLevel;
 			// Generate 5x5 kernel for weights
 			//int kernelSize = ((int)Ceil(sigma) * 2) + 1;
-			float* kernel = new float[KernelSize];
-			float sum = 0;
+			double* kernel = new double[KernelSize];
+			double sum = 0;
 
 			// TODO: Simplify (2*sigma^2)
 			auto gaussianFunction = [pi, sigma, e](float x)
@@ -451,46 +456,32 @@ void SelectPostProcess( PostProcesses filter )
 			};
 
 			// https://docs.microsoft.com/en-us/windows/desktop/api/d3d10/nf-d3d10-id3d10texture1d-map
-			KernelArray->Map(D3D10CalcSubresource(0, 0, 1), D3D10_MAP_WRITE, D3D10_MAP_WRITE, (void**)kernel);
+			D3D10_MAPPED_TEXTURE2D mappedTex;
+			KernelArray->Map(D3D10CalcSubresource(0, 0, 1), D3D10_MAP_WRITE_DISCARD, 0, &mappedTex);
+			double* arr = (double*)mappedTex.pData;
 
 			for (int i = 0; i < KernelSize / 2 + 1; ++i)
 			{
 				// First and last are the same, so are second and second to last, and so on
 				// We can store the value once and only go to the middle of the array (which will be an odd number)
-				float value = gaussianFunction(i - (KernelSize / 2));
+				double value = gaussianFunction(i - (KernelSize / 2));
 				kernel[i] = value;
 				kernel[(KernelSize - 1 - i)] = value;
 				sum += kernel[i];
 			}
-
+			// And populate the array
 			for (int i = 0; i < KernelSize; ++i)
 			{
-					// And normalise the kernel
-					kernel[i] /= sum;
+				arr[i] = kernel[i];
 			}
 
-			D3DXMATRIX kernelMatrix;
-			kernelMatrix._11 = kernel[0];
-			kernelMatrix._12 = kernel[1];
-			kernelMatrix._13 = kernel[2];
-			kernelMatrix._14 = kernel[4];
-			kernelMatrix._21 = kernel[5];
-			kernelMatrix._22 = kernel[6];
-			kernelMatrix._23 = kernel[7];
-			kernelMatrix._24 = kernel[8];
-			kernelMatrix._31 = kernel[9];
-			kernelMatrix._32 = kernel[10];
-			kernelMatrix._33 = kernel[11];
-			kernelMatrix._34 = kernel[12];
-			kernelMatrix._41 = kernel[13];
-			kernelMatrix._42 = kernel[14];
-			kernelMatrix._43 = kernel[15];
-			kernelMatrix._44 = kernel[16];
-
-			//KernelVar->SetMatrix(kernelMatrix);
 			KernelSizeVar->SetInt(KernelSize);
 			KernelVar->SetResource(KernelRV);
-			//KernelArray->Unmap(D3D10CalcSubresource(0, 0, 1));
+			KernelArray->Unmap(D3D10CalcSubresource(0, 0, 1));
+
+			// Set the viewport dimensions
+			ViewportWidthVar->SetFloat(static_cast<float>(BackBufferWidth));
+			ViewportHeightVar->SetFloat(static_cast<float>(BackBufferHeight));
 			delete[] kernel;
 			break;
 		}

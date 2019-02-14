@@ -8,6 +8,10 @@
 // Global Variables
 //--------------------------------------------------------------------------------------
 
+// Viewport Dimensions - needed for converting pixel coordinates (0->Width, 0->Height) to UV coordinates (0->1) - used in polygon post-processing
+float ViewportWidth;
+float ViewportHeight;
+
 // Post Process Area - Dimensions
 float2 PPAreaTopLeft;     // Top-left and bottom-right coordinates of area to post process, provided as UVs into the scene texture...
 float2 PPAreaBottomRight; // ... i.e. the X and Y coordinates range from 0.0 to 1.0 from left->right and top->bottom of viewport
@@ -23,8 +27,7 @@ float  DistortLevel;
 float  BurnLevel;
 float  SpiralTimer;
 float  HeatHazeTimer;
-//float4x4 Kernel;
-Texture1D<float> Kernel;
+Texture2D Kernel;
 int KernelSize;
 
 // Texture maps
@@ -327,13 +330,18 @@ float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     float3 ppColour = float3(0, 0, 0);
 	// Needs to add the weighted value of all neighbouring pixels in X
-
+    float x;
+    float y = ppIn.UVScene.y;
     for (int i = 0; i < KernelSize; ++i)
-	{
-        ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x + (i - KernelSize / 2), ppIn.UVScene.y)) * /*(Kernel[i % 4][i / 4])*/Kernel.Sample(PointClamp, i);
+	{    
+        x = ppIn.UVScene.x + (i - KernelSize / 2);
+        if (0 <= x && x < ViewportWidth)
+        {
+            ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).r;
+        }
     }
 	
-	return float4(ppColour, 1.0f);
+    return float4(ppColour, 1.0);
 }
 
 // Post-processing shader that applies a gaussian blur in Y
@@ -341,13 +349,18 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     float3 ppColour = float3(0, 0, 0);
 	// Needs to add the weighted value of all neighbouring pixels in Y
-
+    float x = ppIn.UVScene.x;
+    float y;
     for (int i = 0; i < KernelSize; ++i)
     {
-        ppColour += PostProcessMap.Sample(PointClamp, float2(ppIn.UVScene.x, ppIn.UVScene.y + (i - KernelSize / 2))) * /*(Kernel[i % 4][i / 4])*/Kernel.Sample(PointClamp, i);
+        y = ppIn.UVScene.y + (i - KernelSize / 2);
+        if (0 <= y && y < ViewportHeight)
+        {
+            ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).r;
+        }
     }
 	
-    return float4(ppColour, 1.0f);
+    return float4(ppColour, 1.0);
 }
 
 float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
@@ -525,7 +538,7 @@ technique10 PPHeatHaze
 // Two-pass Gaussian blur
 technique10 PPBlur
 {
-	pass P0
+	pass Horizontal
 	{
 		SetVertexShader(CompileShader(vs_4_0, PPQuad()));
 		SetGeometryShader(NULL);
@@ -535,7 +548,7 @@ technique10 PPBlur
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
 	}
-	/*pass P1
+    pass Vertical
 	{
 		SetVertexShader(CompileShader(vs_4_0, PPQuad()));
 		SetGeometryShader(NULL);
@@ -544,7 +557,7 @@ technique10 PPBlur
 		SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
-	}*/
+	}
 }
 
 technique10 PPUnderWater
