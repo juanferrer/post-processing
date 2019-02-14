@@ -334,10 +334,10 @@ float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     float y = ppIn.UVScene.y;
     for (int i = 0; i < KernelSize; ++i)
 	{    
-        x = ppIn.UVScene.x + (i - KernelSize / 2);
-        if (0 <= x && x < ViewportWidth)
+        x = ppIn.UVScene.x + ((i - KernelSize / 2) / ViewportWidth);
+        if (0 <= x && x < 1.0)
         {
-            ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).r;
+            ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).r;
         }
     }
 	
@@ -353,10 +353,10 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     float y;
     for (int i = 0; i < KernelSize; ++i)
     {
-        y = ppIn.UVScene.y + (i - KernelSize / 2);
-        if (0 <= y && y < ViewportHeight)
+        y = ppIn.UVScene.y + ((i - KernelSize / 2) / ViewportHeight);
+        if (0 <= y && y < 1.0)
         {
-            ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).r;
+            ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).r;
         }
     }
 	
@@ -365,7 +365,7 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 
 float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-    float3 ppColour = (float3)PostProcessMap.Sample(PointClamp, ppIn.UVScene) * UnderWaterTintColour;
+    float3 ppColour = (float3) PostProcessMap.Sample(PointClamp, ppIn.UVScene) * UnderWaterTintColour;
     return float4(ppColour, 1.0f);
 }
 
@@ -450,13 +450,13 @@ technique10 PPGradient
 {
 	pass P0
 	{
-		SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+		SetVertexShader( CompileShader( vs_4_0, PPQuad() ) );
 		SetGeometryShader(NULL);
 		SetPixelShader(CompileShader(ps_4_0, PPGradientShader()));
 
-		SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
-		SetRasterizerState(CullBack);
-		SetDepthStencilState(DepthWritesOff, 0);
+        SetBlendState( NoBlending, float4( 0.0f, 0.0f, 0.0f, 0.0f ), 0xFFFFFFFF );
+		SetRasterizerState( CullBack );
+		SetDepthStencilState( DepthWritesOff, 0 );
 	}
 };
 
@@ -544,7 +544,7 @@ technique10 PPBlur
 		SetGeometryShader(NULL);
 		SetPixelShader(CompileShader(ps_4_0, PPGaussianBlurHorizontalShader()));
 
-		SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+		SetBlendState( NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
 	}

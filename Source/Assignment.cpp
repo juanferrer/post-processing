@@ -56,7 +56,7 @@ float SpiralTimer = 0.0f;
 const float SpiralSpeed = 1.0f;
 float HeatHazeTimer = 0.0f;
 const float HeatHazeSpeed = 1.0f;
-float BlurLevel = 0.8f;
+float BlurLevel = 0.8;
 int BlurRadius = 2;
 int KernelSize = BlurRadius * 2 + 1;
 
@@ -455,7 +455,8 @@ void SelectPostProcess( PostProcesses filter )
 				return (1.0 / sqrt(r * pi)) * pow(e, -((x * x)) / r);
 			};
 
-			// https://docs.microsoft.com/en-us/windows/desktop/api/d3d10/nf-d3d10-id3d10texture1d-map
+			// https://docs.microsoft.com/en-us/windows/desktop/api/d3d10/nf-d3d10-id3d10texture2d-map
+			// https://docs.microsoft.com/en-gb/windows/desktop/direct3d10/d3d10-graphics-programming-guide-resources-creating-textures
 			D3D10_MAPPED_TEXTURE2D mappedTex;
 			KernelArray->Map(D3D10CalcSubresource(0, 0, 1), D3D10_MAP_WRITE_DISCARD, 0, &mappedTex);
 			double* arr = (double*)mappedTex.pData;
@@ -472,10 +473,11 @@ void SelectPostProcess( PostProcesses filter )
 			// And populate the array
 			for (int i = 0; i < KernelSize; ++i)
 			{
-				arr[i] = kernel[i];
+				int colStart = i * 4;
+				arr[colStart] = kernel[i] / sum;
 			}
 
-			KernelSizeVar->SetInt(KernelSize);
+			KernelSizeVar->SetFloat(KernelSize);
 			KernelVar->SetResource(KernelRV);
 			KernelArray->Unmap(D3D10CalcSubresource(0, 0, 1));
 
@@ -815,6 +817,15 @@ void UpdateScene( float updateTime )
 	if (KeyHit(Key_3))
 	{
 		FullScreenFilters.push_back(UnderWater);
+	}
+
+	if (KeyHit(Key_Numpad8))
+	{
+		KernelSize += 2;
+	}
+	if (KeyHit(Key_Numpad2))
+	{
+		KernelSize -= 10;
 	}
 
 	// Rotate cube and attach light to it
