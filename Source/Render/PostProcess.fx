@@ -27,8 +27,10 @@ float  DistortLevel;
 float  BurnLevel;
 float  SpiralTimer;
 float  HeatHazeTimer;
+float UnderWaterTimer;
 Texture2D Kernel;
 int KernelSize;
+float KernelSum;
 
 // Texture maps
 Texture2D SceneTexture;   // Texture containing the scene to copy to the full screen quad
@@ -335,13 +337,10 @@ float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     for (int i = 0; i < KernelSize; ++i)
 	{    
         x = ppIn.UVScene.x + ((i - KernelSize / 2) / ViewportWidth);
-        if (0 <= x && x < 1.0)
-        {
-            ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).r;
-        }
+        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).x;
     }
 	
-    return float4(ppColour, 1.0);
+    return float4(ppColour / KernelSum, 1.0);
 }
 
 // Post-processing shader that applies a gaussian blur in Y
@@ -354,18 +353,16 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     for (int i = 0; i < KernelSize; ++i)
     {
         y = ppIn.UVScene.y + ((i - KernelSize / 2) / ViewportHeight);
-        if (0 <= y && y < 1.0)
-        {
-            ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).r;
-        }
+        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).x;
     }
 	
-    return float4(ppColour, 1.0);
+    return float4(ppColour / KernelSum, 1.0);
 }
 
 float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-    float3 ppColour = (float3) PostProcessMap.Sample(PointClamp, ppIn.UVScene) * UnderWaterTintColour;
+    float2 offset = float2(0, sin(ppIn.UVArea.x * radians(1400.0f) + UnderWaterTimer) / 50);
+    float3 ppColour = (float3) PostProcessMap.Sample(PointClamp, ppIn.UVScene + offset) * UnderWaterTintColour;
     return float4(ppColour, 1.0f);
 }
 

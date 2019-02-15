@@ -56,9 +56,10 @@ float SpiralTimer = 0.0f;
 const float SpiralSpeed = 1.0f;
 float HeatHazeTimer = 0.0f;
 const float HeatHazeSpeed = 1.0f;
-float BlurLevel = 0.8;
-int BlurRadius = 2;
-int KernelSize = BlurRadius * 2 + 1;
+float UnderWaterTimer = 0.0f;
+const float UnderWaterSpeed = 1.0f;
+float BlurLevel = 3;
+int KernelSize = BlurLevel * 2 + 1;
 
 
 // Separate effect file for full screen & area post-processes. Not necessary to use a separate file, but convenient given the architecture of this lab
@@ -101,6 +102,7 @@ ID3D10EffectScalarVariable* DistortLevelVar = NULL;
 ID3D10EffectScalarVariable* BurnLevelVar = NULL;
 ID3D10EffectScalarVariable* SpiralTimerVar = NULL;
 ID3D10EffectScalarVariable* HeatHazeTimerVar = NULL;
+ID3D10EffectScalarVariable* UnderWaterTimerVar = NULL;
 ID3D10EffectShaderResourceVariable* KernelVar = NULL;
 //ID3D10EffectMatrixVariable* KernelVar = NULL;
 ID3D10ShaderResourceView* KernelRV = NULL;
@@ -108,6 +110,7 @@ ID3D10Texture2D* KernelArray = NULL;
 ID3D10EffectScalarVariable* KernelSizeVar = NULL;
 extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of the viewport needed to help access the scene texture (see poly post-processing shaders)
 extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
+ID3D10EffectScalarVariable* KernelSum = NULL;
 
 //*****************************************************************************
 
@@ -331,8 +334,10 @@ bool PostProcessSetup()
 	BurnLevelVar         = PPEffect->GetVariableByName( "BurnLevel" )->AsScalar();
 	SpiralTimerVar       = PPEffect->GetVariableByName( "SpiralTimer" )->AsScalar();
 	HeatHazeTimerVar     = PPEffect->GetVariableByName( "HeatHazeTimer" )->AsScalar();
+	UnderWaterTimerVar   = PPEffect->GetVariableByName( "UnderWaterTimer" )->AsScalar();
 	KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsShaderResource();
 	KernelSizeVar		 = PPEffect->GetVariableByName( "KernelSize" )->AsScalar();
+	KernelSum			 = PPEffect->GetVariableByName( "KernelSum" )->AsScalar();
 	ViewportWidthVar	 = PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
 	ViewportHeightVar	 = PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
 
@@ -468,16 +473,17 @@ void SelectPostProcess( PostProcesses filter )
 				double value = gaussianFunction(i - (KernelSize / 2));
 				kernel[i] = value;
 				kernel[(KernelSize - 1 - i)] = value;
-				sum += kernel[i];
+				sum += (value * ((i < KernelSize / 2) ? 2.0 : 1.0));
 			}
 			// And populate the array
 			for (int i = 0; i < KernelSize; ++i)
 			{
 				int colStart = i * 4;
-				arr[colStart] = kernel[i] / sum;
+				arr[i] = kernel[i] / sum;
 			}
 
 			KernelSizeVar->SetFloat(KernelSize);
+			KernelSum->SetFloat(sum);
 			KernelVar->SetResource(KernelRV);
 			KernelArray->Unmap(D3D10CalcSubresource(0, 0, 1));
 
@@ -491,6 +497,7 @@ void SelectPostProcess( PostProcesses filter )
 		{
 			D3DXCOLOR UnderWaterTintColour = D3DXCOLOR(0.0f, 0.0f, 1.0f, 1.0f);
 			UnderWaterTintColourVar->SetRawValue(&UnderWaterTintColour, 0, 12);
+			UnderWaterTimerVar->SetFloat(UnderWaterTimer);
 		}
 	}
 }
@@ -502,6 +509,7 @@ void UpdatePostProcesses( float updateTime )
 	BurnLevel = Mod( BurnLevel + BurnSpeed * updateTime, 1.0f );
 	SpiralTimer   += SpiralSpeed * updateTime;
 	HeatHazeTimer += HeatHazeSpeed * updateTime;
+	UnderWaterTimer += UnderWaterSpeed * updateTime;
 }
 
 
@@ -630,17 +638,7 @@ void RenderScene()
 			PostProcessIndex = (PostProcessIndex + 1) % 2;
 		}
 		// Select the back buffer to use for rendering (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
-		// We have to set the render target depending on what index we're in
-		if (i == size - 1)
-		{
-			// Last effect
-			g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView);
-		}
-		else
-		{
-			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
-
-		}
+		g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
 
 
 		// Prepare shader settings for the current full screen filter
@@ -653,7 +651,30 @@ void RenderScene()
 		g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 		PPTechniques[FullScreenFilters[i]]->GetPassByIndex(0)->Apply(0);
 		g_pd3dDevice->Draw(4, 0);
+
+		if (FullScreenFilters[i] == Blur)
+		{
+			// Do the second pass here
+			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
+			// Increase the index only when using the shader resources
+			PostProcessIndex = (PostProcessIndex + 1) % 2;
+			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
+			g_pd3dDevice->IASetInputLayout(NULL);
+			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+			PPTechniques[Blur]->GetPassByName("Vertical")->Apply(0);
+			g_pd3dDevice->Draw(4, 0);
+		}
 	}
+
+	// Now rerender everything to the Backbuffer
+	g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView);
+	PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
+	SelectPostProcess(Copy);
+	SetFullScreenPostProcessArea();
+	g_pd3dDevice->IASetInputLayout(NULL);
+	g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	PPTechniques[Copy]->GetPassByIndex(0)->Apply(0);
+	g_pd3dDevice->Draw(4, 0);
 
 	//------------------------------------------------
 
@@ -823,9 +844,9 @@ void UpdateScene( float updateTime )
 	{
 		KernelSize += 2;
 	}
-	if (KeyHit(Key_Numpad2))
+	if (KeyHit(Key_Numpad2) && KernelSize > 3)
 	{
-		KernelSize -= 10;
+		KernelSize -= 2;
 	}
 
 	// Rotate cube and attach light to it
