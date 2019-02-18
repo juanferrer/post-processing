@@ -43,11 +43,12 @@ enum PostProcesses
 	HeatHaze,
 	Blur,
 	UnderWater,
+	Negative,
 	NumPostProcesses,
 };
 
 // Currently used post process
-vector<PostProcesses> FullScreenFilters = { Copy, UnderWater };
+vector<PostProcesses> FullScreenFilters = { Copy };
 int PostProcessIndex = 0;
 
 // Post-process settings
@@ -67,7 +68,7 @@ int KernelSize = BlurLevel * 2 + 1;
 ID3D10Effect* PPEffect;
 
 // Technique name for each post-process
-const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBlur", "PPUnderWater" };
+const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBlur", "PPUnderWater", "PPNegative" };
 
 // Technique pointers for each post-process
 ID3D10EffectTechnique* PPTechniques[NumPostProcesses];
@@ -499,6 +500,11 @@ void SelectPostProcess( PostProcesses filter )
 			UnderWaterTintColourVar->SetRawValue(&UnderWaterTintColour, 0, 12);
 			UnderWaterTimerVar->SetFloat(UnderWaterTimer);
 		}
+		case Negative:
+		{
+
+		}
+
 	}
 }
 
@@ -521,6 +527,20 @@ void UpdatePostProcesses( float updateTime )
 // the effect of the post-processing into the scene). Also requires the camera, since we are creating a camera facing quad.
 void SetPostProcessArea( CCamera* camera, CVector3 areaCentre, float width, float height, float depthOffset = 0.0f )
 {
+	if (camera == NULL)
+	{
+		// No camera provided, so make the quad not face the camera
+
+		CVector3 topLeft = areaCentre;
+		topLeft += CVector3(-width / 2.0f, -height / 2.0f, 0);
+		CVector3 bottomRight = areaCentre;
+		bottomRight += CVector3(width / 2.0f, height / 2.0f, 0);
+
+		PPAreaTopLeftVar->SetRawValue(&topLeft.Vector2(), 0, 8);
+		PPAreaBottomRightVar->SetRawValue(&bottomRight.Vector2(), 0, 8);
+		PPAreaDepthVar->SetFloat(depthOffset);
+		return;
+	}
 	// Get the area centre in camera space.
 	CVector4 cameraSpaceCentre = CVector4(areaCentre, 1.0f) * camera->GetViewMatrix();
 
@@ -720,6 +740,20 @@ void RenderScene()
 	g_pd3dDevice->IASetPrimitiveTopology( D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP );
 	PPTechniques[Spiral]->GetPassByIndex(0)->Apply(0);
 	g_pd3dDevice->Draw( 4, 0 );
+
+	// Wall windows shader
+	CEntity* wallWindow = EntityManager.GetEntity("Wall");
+	// Need to create a non-camera-facing quad for this
+	CVector3 pos = wallWindow->Position();
+	//pos.y = 12.5f;
+	pos.y = 24;
+	SetPostProcessArea(NULL, pos, 12.5f, 12.5f, 2);
+	
+	SelectPostProcess(Negative);
+	g_pd3dDevice->IASetInputLayout(NULL);
+	g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	PPTechniques[Negative]->GetPassByIndex(0)->Apply(0);
+	g_pd3dDevice->Draw(4, 0);
 
 	//------------------------------------------------
 

@@ -20,6 +20,8 @@
     <EntityTemplate Type="Scenery" Name="SmallTank" Mesh="TankSmall1.x"/>
     <EntityTemplate Type="Scenery" Name="Tribune" Mesh="Tribune1.x"/>
     <EntityTemplate Type="Scenery" Name="Tree" Mesh="Tree.x"/>
+    <EntityTemplate Type="Wall" Name="Wall1" Mesh="Wall1.x"/>
+    <EntityTemplate Type="Wall" Name="Wall2" Mesh="Wall2.x"/>
 
     <!-- Other Types -->
     <EntityTemplate Type="Object" Name="ParaCube" Mesh="Cube.x"/>
@@ -458,6 +460,12 @@
       <Rotation Radians="true" X="0" Y="0" Z="0"/>
     </Entity>
 
+    <Entity Type="Wall1" Name="Wall">
+      <Position X="0" Y="0" Z="0"/>
+      <Rotation Radians="true" X="0" Y="50" Z="0"/>
+    <Scale X="50.0" Y="50.0" Z="50.0"/>
+    </Entity>
+  
   </Entities>
   <!-- End of Scene Setup -->
 

@@ -359,11 +359,25 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     return float4(ppColour / KernelSum, 1.0);
 }
 
+// Post-processing shader that gives the scene an underwater feeling
 float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     float2 offset = float2(0, sin(ppIn.UVArea.x * radians(200.0f) + UnderWaterTimer) / 50);
     float3 ppColour = (float3) PostProcessMap.Sample(PointClamp, ppIn.UVScene + offset) * UnderWaterTintColour;
     return float4(ppColour, 1.0f);
+}
+
+// Post-processing shader that applies a negative on top of the image
+float4 PPNegativeShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+	// Sample the texture colour at the location UVSCene and multiply it by DiffuseColour (the colour of the material extracted from the .X file, variable already set up)
+    float4 textureColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
+    textureColour.r = 1.0 - textureColour.r;
+    textureColour.g = 1.0 - textureColour.g;
+    textureColour.b = 1.0 - textureColour.b;
+
+	// Return a float4 containing the tinted colour in rgb and 1.0 in alpha
+    return float4(textureColour.xyz, 1.0f);
 }
 
 
@@ -557,6 +571,7 @@ technique10 PPBlur
 	}
 }
 
+// Underwater effect
 technique10 PPUnderWater
 {
     pass P0
@@ -566,6 +581,21 @@ technique10 PPUnderWater
         SetPixelShader(CompileShader(ps_4_0, PPUnderWaterShader()));
 
         SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
+}
+
+// Turn the image into its negative
+technique10 PPNegative
+{
+    pass P0
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPNegativeShader()));
+
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);
         SetDepthStencilState(DepthWritesOff, 0);
     }
