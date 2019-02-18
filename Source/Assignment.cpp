@@ -20,7 +20,8 @@ using namespace std;
 #include "EntityManager.h"
 #include "Messenger.h"
 #include "CParseLevel.h"
-#include "Assignment.h"
+#include "Assignment.h" 
+#include "HSLColour.h"
 
 namespace gen
 {
@@ -112,8 +113,10 @@ extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of 
 extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
 ID3D10EffectScalarVariable* KernelSum = NULL;
 
-//*****************************************************************************
+HSLColour GradientTopColour(0, 1, 0.5f);
+HSLColour GradientBotColour(240, 1, 0.5f);
 
+//*****************************************************************************
 
 //-----------------------------------------------------------------------------
 // Constants
@@ -187,7 +190,6 @@ const SColourRGBA AmbientColour( 0.3f, 0.3f, 0.4f, 1.0f );
 CVector3 LightCentre( 0.0f, 30.0f, 50.0f );
 const float LightOrbit = 170.0f;
 const float LightOrbitSpeed = 0.2f;
-
 
 //-----------------------------------------------------------------------------
 // Scene management
@@ -383,10 +385,8 @@ void SelectPostProcess( PostProcesses filter )
 		case Gradient:
 		{
 			// Set the colours used to tint the scene
-			D3DXCOLOR TintColour = D3DXCOLOR(1.0f, 0.0f, 0.0f, 1.0f);
-			TintColourVar->SetRawValue(&TintColour, 0, 12);
-			D3DXCOLOR TintColour2 = D3DXCOLOR(0.0f, 0.0f, 1.0f, 1.0f);
-			TintColour2Var->SetRawValue(&TintColour2, 0, 12);
+			TintColourVar->SetRawValue(&GradientTopColour.GetD3DXCOLOR(), 0, 12);
+			TintColour2Var->SetRawValue(&GradientBotColour.GetD3DXCOLOR() , 0, 12);
 		}
 		break;
 
@@ -509,6 +509,9 @@ void UpdatePostProcesses( float updateTime )
 	BurnLevel = Mod( BurnLevel + BurnSpeed * updateTime, 1.0f );
 	SpiralTimer   += SpiralSpeed * updateTime;
 	HeatHazeTimer += HeatHazeSpeed * updateTime;
+
+	GradientTopColour.ModifyHue(0.1);
+	GradientBotColour.ModifyHue(0.1);
 	UnderWaterTimer += UnderWaterSpeed * updateTime;
 }
 

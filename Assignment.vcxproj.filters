@@ -107,6 +107,9 @@
     </ClCompile>
     <ClCompile Include="Source\MainApp.cpp" />
     <ClCompile Include="Source\Assignment.cpp" />
+    <ClCompile Include="Source\Math\HSLColour.cpp">
+      <Filter>Math</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Source\Scene\Camera.h">
@@ -206,6 +209,12 @@
       <Filter>Data</Filter>
     </ClInclude>
     <ClInclude Include="Source\Assignment.h" />
+    <ClInclude Include="Source\Math\HSLColour.h">
+      <Filter>Math</Filter>
+    </ClInclude>
+    <ClInclude Include="Source\Math\ColourMath.h">
+      <Filter>Math</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="Entities.xml" />
