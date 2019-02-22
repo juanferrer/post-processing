@@ -521,26 +521,29 @@ void UpdatePostProcesses( float updateTime )
 	UnderWaterTimer += UnderWaterSpeed * updateTime;
 }
 
+CVector2 CameraPixelFromWorldPoint(CCamera* cam, CVector3 worldPoint)
+{
+	CVector4 worldPt4 = CVector4(worldPoint.x, worldPoint.y, worldPoint.z, 1.0f);
+	CVector4 viewportPt = cam->GetViewProjMatrix().Transform(worldPt4);
+
+	// Check if vertex is behind camera
+	if (viewportPt.w < 0) return CVector2::kZero;
+	else
+	{
+		viewportPt.x /= viewportPt.w;
+		viewportPt.y /= viewportPt.w;
+	}
+	CVector2 camPixel;
+	camPixel.x = (viewportPt.x + 1.0)* BackBufferWidth * 0.5f;
+	camPixel.y = (1.0f - viewportPt.y) * BackBufferHeight * 0.5f;
+	return camPixel;
+}
 
 // Sets in the shaders the top-left, bottom-right and depth coordinates of the area post process to work on
 // Requires a world point at the centre of the area, the width and height of the area (in world units), an optional depth offset (to pull or push 
 // the effect of the post-processing into the scene). Also requires the camera, since we are creating a camera facing quad.
-void SetPostProcessArea( CCamera* camera, CVector3 areaCentre, float width, float height, float depthOffset = 0.0f )
+void SetPostProcessArea( CCamera* camera, CVector3 areaCentre, float width, float height, float depthOffset = 0.0f, bool isFacingCamera = true)
 {
-	if (camera == NULL)
-	{
-		// No camera provided, so make the quad not face the camera
-
-		CVector3 topLeft = areaCentre;
-		topLeft += CVector3(-width / 2.0f, -height / 2.0f, 0);
-		CVector3 bottomRight = areaCentre;
-		bottomRight += CVector3(width / 2.0f, height / 2.0f, 0);
-
-		PPAreaTopLeftVar->SetRawValue(&topLeft.Vector2(), 0, 8);
-		PPAreaBottomRightVar->SetRawValue(&bottomRight.Vector2(), 0, 8);
-		PPAreaDepthVar->SetFloat(depthOffset);
-		return;
-	}
 	// Get the area centre in camera space.
 	CVector4 cameraSpaceCentre = CVector4(areaCentre, 1.0f) * camera->GetViewMatrix();
 
@@ -551,6 +554,28 @@ void SetPostProcessArea( CCamera* camera, CVector3 areaCentre, float width, floa
 	cameraSpaceCentre.x += width;
 	cameraSpaceCentre.y -= height;
 	CVector4 cameraBottomRight = cameraSpaceCentre;
+
+	if (!isFacingCamera)
+	{
+		CVector4 projTopLeft = cameraTopLeft;
+		CVector4 projBottomRight = cameraBottomRight;
+		// Perform perspective divide to get coordinates in normalised viewport space (-1.0 to 1.0 from left->right and bottom->top of the viewport)
+		projTopLeft.x /= projTopLeft.Length();
+		projTopLeft.y /= projTopLeft.Length();
+		projBottomRight.x /= projBottomRight.Length();
+		projBottomRight.y /= projBottomRight.Length();
+		// Convert the x & y coordinates to UV space (0 -> 1, y flipped). This extra step makes the shader work simpler
+		projTopLeft.x = projTopLeft.x / 2.0f + 0.5f;
+		projTopLeft.y = -projTopLeft.y / 2.0f + 0.5f;
+		projBottomRight.x = projBottomRight.x / 2.0f + 0.5f;
+		projBottomRight.y = -projBottomRight.y / 2.0f + 0.5f;
+		// Send the values calculated to the shader. The post-processing vertex shader needs only these values to
+// create the vertex buffer for the quad to render, we don't need to create a vertex buffer for post-processing at all.
+		PPAreaTopLeftVar->SetRawValue(&projTopLeft.Vector2(), 0, 8);         // Viewport space x & y for top-left
+		PPAreaBottomRightVar->SetRawValue(&projBottomRight.Vector2(), 0, 8); // Same for bottom-right
+		PPAreaDepthVar->SetFloat(0); // Depth buffer value for area
+		return;
+	}
 
 	// Get the projection space coordinates of the post process area
 	CVector4 projTopLeft     = cameraTopLeft     * camera->GetProjMatrix();
@@ -745,9 +770,8 @@ void RenderScene()
 	CEntity* wallWindow = EntityManager.GetEntity("Wall");
 	// Need to create a non-camera-facing quad for this
 	CVector3 pos = wallWindow->Position();
-	//pos.y = 12.5f;
-	pos.y = 24;
-	SetPostProcessArea(NULL, pos, 12.5f, 12.5f, 2);
+	pos.y = 12.5f;
+	SetPostProcessArea(MainCamera, pos, 12.5f, 12.5f, 2, false);
 	
 	SelectPostProcess(Negative);
 	g_pd3dDevice->IASetInputLayout(NULL);
