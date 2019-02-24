@@ -41,7 +41,8 @@ enum PostProcesses
 	Distort,
 	Spiral,
 	HeatHaze,
-	Blur,
+	BoxBlur,
+	GaussianBlur,
 	UnderWater,
 	Negative,
 	NumPostProcesses,
@@ -60,15 +61,16 @@ float HeatHazeTimer = 0.0f;
 const float HeatHazeSpeed = 1.0f;
 float UnderWaterTimer = 0.0f;
 const float UnderWaterSpeed = 1.0f;
-float BlurLevel = 3;
-int KernelSize = BlurLevel * 2 + 1;
+float BlurLevel = 1;
+int BlurRadius = 3 * BlurLevel;
+int KernelSize = BlurRadius * 2 + 1;
 
 
 // Separate effect file for full screen & area post-processes. Not necessary to use a separate file, but convenient given the architecture of this lab
 ID3D10Effect* PPEffect;
 
 // Technique name for each post-process
-const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBlur", "PPUnderWater", "PPNegative" };
+const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative" };
 
 // Technique pointers for each post-process
 ID3D10EffectTechnique* PPTechniques[NumPostProcesses];
@@ -248,10 +250,11 @@ void SceneShutdown()
 bool PostProcessSetup()
 {
 	D3D10_TEXTURE2D_DESC arrayDesc;
-	arrayDesc.Width = KernelSize;
+	arrayDesc.Width = 256;
 	arrayDesc.Height = 1;	// Since we're passing an array, we only need one row
 	arrayDesc.MipLevels = 1;
 	arrayDesc.ArraySize = 1;
+	//arrayDesc.Format = DXGI_FORMAT_R32_FLOAT; // 32-bit floats
 	arrayDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // RGBA texture (8-bits each)
 	arrayDesc.SampleDesc.Count = 1;
 	arrayDesc.SampleDesc.Quality = 0;
@@ -433,32 +436,38 @@ void SelectPostProcess( PostProcesses filter )
 		{
 			// Set the amount of spiral - use a tweaked cos wave to animate
 			SpiralTimerVar->SetFloat( (1.0f - Cos(SpiralTimer)) * 4.0f );
-			break;
 		}
+		break;
 
 		case HeatHaze:
 		{
 			// Set the amount of spiral - use a tweaked cos wave to animate
 			HeatHazeTimerVar->SetFloat( HeatHazeTimer );
-			break;
 		}
+		break;
 
-		case Blur:
+		case BoxBlur:
+		{
+			// Set the viewport dimensions
+			ViewportWidthVar->SetFloat(static_cast<float>(BackBufferWidth));
+			ViewportHeightVar->SetFloat(static_cast<float>(BackBufferHeight));
+		}
+		break;
+
+		case GaussianBlur:
 		{
 			const double pi = 3.14159265359;
-			const double e = 2.71828182846;
+			const double e =  2.71828182846;
 			const double sigma = BlurLevel;
-			// Generate 5x5 kernel for weights
-			//int kernelSize = ((int)Ceil(sigma) * 2) + 1;
 			double* kernel = new double[KernelSize];
-			double sum = 0;
+			double sum = 0.0;
 
-			// TODO: Simplify (2*sigma^2)
-			auto gaussianFunction = [pi, sigma, e](float x)
+			// https://en.wikipedia.org/w/index.php?title=Gaussian_blur#Mathematics
+			auto gaussianFunction = [pi, sigma, e](int x)
 			{
 				// r = 2 * sigma ^ 2
 				double r = 2.0 * sigma * sigma;
-				return (1.0 / sqrt(r * pi)) * pow(e, -((x * x)) / r);
+				return (1.0 / sqrt(r * pi)) * pow(e, -((x * x) / r));
 			};
 
 			// https://docs.microsoft.com/en-us/windows/desktop/api/d3d10/nf-d3d10-id3d10texture2d-map
@@ -476,14 +485,15 @@ void SelectPostProcess( PostProcesses filter )
 				kernel[(KernelSize - 1 - i)] = value;
 				sum += (value * ((i < KernelSize / 2) ? 2.0 : 1.0));
 			}
+
 			// And populate the array
 			for (int i = 0; i < KernelSize; ++i)
 			{
 				int colStart = i * 4;
-				arr[i] = kernel[i] / sum;
+				arr[colStart] = kernel[i] / sum;
 			}
 
-			KernelSizeVar->SetFloat(KernelSize);
+			KernelSizeVar->SetInt(KernelSize);
 			KernelSum->SetFloat(sum);
 			KernelVar->SetResource(KernelRV);
 			KernelArray->Unmap(D3D10CalcSubresource(0, 0, 1));
@@ -492,14 +502,16 @@ void SelectPostProcess( PostProcesses filter )
 			ViewportWidthVar->SetFloat(static_cast<float>(BackBufferWidth));
 			ViewportHeightVar->SetFloat(static_cast<float>(BackBufferHeight));
 			delete[] kernel;
-			break;
 		}
+		break;
+
 		case UnderWater:
 		{
 			D3DXCOLOR UnderWaterTintColour = D3DXCOLOR(0.0f, 0.0f, 1.0f, 1.0f);
 			UnderWaterTintColourVar->SetRawValue(&UnderWaterTintColour, 0, 12);
 			UnderWaterTimerVar->SetFloat(UnderWaterTimer);
 		}
+		break;
 		case Negative:
 		{
 
@@ -523,20 +535,19 @@ void UpdatePostProcesses( float updateTime )
 
 CVector2 CameraPixelFromWorldPoint(CCamera* cam, CVector3 worldPoint)
 {
-	CVector4 worldPt4 = CVector4(worldPoint.x, worldPoint.y, worldPoint.z, 1.0f);
-	CVector4 viewportPt = cam->GetViewProjMatrix().Transform(worldPt4);
+		CVector4 viewportPt = CVector4(worldPoint, 1.0f) * cam->GetViewProjMatrix();
+		if (viewportPt.w < cam->GetNearClip())
+		{
+			return CVector2::kOrigin;
+		}
 
-	// Check if vertex is behind camera
-	if (viewportPt.w < 0) return CVector2::kZero;
-	else
-	{
 		viewportPt.x /= viewportPt.w;
 		viewportPt.y /= viewportPt.w;
-	}
-	CVector2 camPixel;
-	camPixel.x = (viewportPt.x + 1.0)* BackBufferWidth * 0.5f;
-	camPixel.y = (1.0f - viewportPt.y) * BackBufferHeight * 0.5f;
-	return camPixel;
+		CVector2 camPixel;
+		camPixel.x = (viewportPt.x + 1.0)* BackBufferWidth * 0.5f;
+		camPixel.y = (1.0f - viewportPt.y) * BackBufferHeight * 0.5f;
+		return camPixel;
+
 }
 
 // Sets in the shaders the top-left, bottom-right and depth coordinates of the area post process to work on
@@ -555,30 +566,8 @@ void SetPostProcessArea( CCamera* camera, CVector3 areaCentre, float width, floa
 	cameraSpaceCentre.y -= height;
 	CVector4 cameraBottomRight = cameraSpaceCentre;
 
-	if (!isFacingCamera)
-	{
-		CVector4 projTopLeft = cameraTopLeft;
-		CVector4 projBottomRight = cameraBottomRight;
-		// Perform perspective divide to get coordinates in normalised viewport space (-1.0 to 1.0 from left->right and bottom->top of the viewport)
-		projTopLeft.x /= projTopLeft.Length();
-		projTopLeft.y /= projTopLeft.Length();
-		projBottomRight.x /= projBottomRight.Length();
-		projBottomRight.y /= projBottomRight.Length();
-		// Convert the x & y coordinates to UV space (0 -> 1, y flipped). This extra step makes the shader work simpler
-		projTopLeft.x = projTopLeft.x / 2.0f + 0.5f;
-		projTopLeft.y = -projTopLeft.y / 2.0f + 0.5f;
-		projBottomRight.x = projBottomRight.x / 2.0f + 0.5f;
-		projBottomRight.y = -projBottomRight.y / 2.0f + 0.5f;
-		// Send the values calculated to the shader. The post-processing vertex shader needs only these values to
-// create the vertex buffer for the quad to render, we don't need to create a vertex buffer for post-processing at all.
-		PPAreaTopLeftVar->SetRawValue(&projTopLeft.Vector2(), 0, 8);         // Viewport space x & y for top-left
-		PPAreaBottomRightVar->SetRawValue(&projBottomRight.Vector2(), 0, 8); // Same for bottom-right
-		PPAreaDepthVar->SetFloat(0); // Depth buffer value for area
-		return;
-	}
-
 	// Get the projection space coordinates of the post process area
-	CVector4 projTopLeft     = cameraTopLeft     * camera->GetProjMatrix();
+	CVector4 projTopLeft = cameraTopLeft * camera->GetProjMatrix();
 	CVector4 projBottomRight = cameraBottomRight * camera->GetProjMatrix();
 
 	// Perform perspective divide to get coordinates in normalised viewport space (-1.0 to 1.0 from left->right and bottom->top of the viewport)
@@ -593,16 +582,16 @@ void SetPostProcessArea( CCamera* camera, CVector3 areaCentre, float width, floa
 	projTopLeft.z /= projTopLeft.w;
 
 	// Convert the x & y coordinates to UV space (0 -> 1, y flipped). This extra step makes the shader work simpler
-	projTopLeft.x =	 projTopLeft.x / 2.0f + 0.5f;
+	projTopLeft.x = projTopLeft.x / 2.0f + 0.5f;
 	projTopLeft.y = -projTopLeft.y / 2.0f + 0.5f;
-	projBottomRight.x =	 projBottomRight.x / 2.0f + 0.5f;
+	projBottomRight.x = projBottomRight.x / 2.0f + 0.5f;
 	projBottomRight.y = -projBottomRight.y / 2.0f + 0.5f;
 
 	// Send the values calculated to the shader. The post-processing vertex shader needs only these values to
 	// create the vertex buffer for the quad to render, we don't need to create a vertex buffer for post-processing at all.
-	PPAreaTopLeftVar->SetRawValue( &projTopLeft.Vector2(), 0, 8 );         // Viewport space x & y for top-left
-	PPAreaBottomRightVar->SetRawValue( &projBottomRight.Vector2(), 0, 8 ); // Same for bottom-right
-	PPAreaDepthVar->SetFloat( projTopLeft.z ); // Depth buffer value for area
+	PPAreaTopLeftVar->SetRawValue(&projTopLeft.Vector2(), 0, 8);         // Viewport space x & y for top-left
+	PPAreaBottomRightVar->SetRawValue(&projBottomRight.Vector2(), 0, 8); // Same for bottom-right
+	PPAreaDepthVar->SetFloat(projTopLeft.z); // Depth buffer value for area
 
 	// ***NOTE*** Most applications you will see doing post-processing would continue here to create a vertex buffer in C++, and would
 	// not use the unusual vertex shader that you will see in the .fx file here. That might (or might not) give a tiny performance boost,
@@ -700,7 +689,7 @@ void RenderScene()
 		PPTechniques[FullScreenFilters[i]]->GetPassByIndex(0)->Apply(0);
 		g_pd3dDevice->Draw(4, 0);
 
-		if (FullScreenFilters[i] == Blur)
+		if (FullScreenFilters[i] == GaussianBlur)
 		{
 			// Do the second pass here
 			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
@@ -709,7 +698,7 @@ void RenderScene()
 			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
 			g_pd3dDevice->IASetInputLayout(NULL);
 			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-			PPTechniques[Blur]->GetPassByName("Vertical")->Apply(0);
+			PPTechniques[GaussianBlur]->GetPassByName("Vertical")->Apply(0);
 			g_pd3dDevice->Draw(4, 0);
 		}
 	}
@@ -850,7 +839,7 @@ void RenderSceneText()
 	case HeatHaze: 
 		outText << "Heat Haze";
 		break;
-	case Blur:
+	case BoxBlur:
 		outText << "Blur";
 		break;
 	case UnderWater:
@@ -894,20 +883,20 @@ void UpdateScene( float updateTime )
 
 	if (KeyHit(Key_2))
 	{
-		FullScreenFilters.push_back(Blur);
+		FullScreenFilters.push_back(GaussianBlur);
 	}
 	if (KeyHit(Key_3))
 	{
 		FullScreenFilters.push_back(UnderWater);
 	}
 
-	if (KeyHit(Key_Numpad8))
+	if (KeyHit(Key_8))
 	{
-		KernelSize += 2;
+		// Increase radius
 	}
-	if (KeyHit(Key_Numpad2) && KernelSize > 3)
+	if (KeyHit(Key_2))
 	{
-		KernelSize -= 2;
+		// Decrease radius
 	}
 
 	// Rotate cube and attach light to it

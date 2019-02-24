@@ -327,6 +327,29 @@ float4 PPHeatHazeShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 	return float4( ppColour, ppAlpha );
 }
 
+float4 PPBoxBlurShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+    float3 ppColour = float3(0, 0, 0);
+    // Average the value of all neighbouring pixels
+    float x, y;
+
+    int BoxBlurSize = 20;
+
+    for (int i = 0; i < BoxBlurSize; ++i)
+    {
+        x = ppIn.UVScene.x + ((i - BoxBlurSize / 2) / ViewportWidth);
+        for (int j = 0; j < BoxBlurSize; ++j)
+        {
+            y = ppIn.UVScene.y + ((j - BoxBlurSize / 2) / ViewportHeight);
+            ppColour += PostProcessMap.Sample(PointClamp, float2(x, y));
+        }
+    }
+
+    ppColour /= BoxBlurSize * BoxBlurSize;
+
+    return float4(ppColour, 1.0);   
+}
+
 // Post-processing shader that applies a gaussian blur in X
 float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
@@ -334,13 +357,13 @@ float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 	// Needs to add the weighted value of all neighbouring pixels in X
     float x;
     float y = ppIn.UVScene.y;
-    for (int i = 0; i < KernelSize; ++i)
+    for (int i = 0; i < KernelSize; i++)
 	{    
         x = ppIn.UVScene.x + ((i - KernelSize / 2) / ViewportWidth);
         ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).x;
     }
 	
-    return float4(ppColour / KernelSum, 1.0);
+    return float4(ppColour * 1.075, 1.0);
 }
 
 // Post-processing shader that applies a gaussian blur in Y
@@ -350,13 +373,13 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 	// Needs to add the weighted value of all neighbouring pixels in Y
     float x = ppIn.UVScene.x;
     float y;
-    for (int i = 0; i < KernelSize; ++i)
+    for (int i = 0; i < KernelSize; i++)
     {
         y = ppIn.UVScene.y + ((i - KernelSize / 2) / ViewportHeight);
         ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel.Sample(PointClamp, float2(0, i)).x;
     }
 	
-    return float4(ppColour / KernelSum, 1.0);
+    return float4(ppColour * 1.075, 1.0);
 }
 
 // Post-processing shader that gives the scene an underwater feeling
@@ -546,8 +569,23 @@ technique10 PPHeatHaze
      }
 }
 
+// Simple Box Blur
+technique10 PPBoxBlur
+{
+    pass P0
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPBoxBlurShader()));
+
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
+}
+
 // Two-pass Gaussian blur
-technique10 PPBlur
+technique10 PPGaussianBlur
 {
 	pass Horizontal
 	{
@@ -565,7 +603,7 @@ technique10 PPBlur
 		SetGeometryShader(NULL);
 		SetPixelShader(CompileShader(ps_4_0, PPGaussianBlurVerticalShader()));
 
-		SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
 	}
