@@ -45,6 +45,7 @@ enum PostProcesses
 	GaussianBlur,
 	UnderWater,
 	Negative,
+	Retro,
 	NumPostProcesses,
 };
 
@@ -71,7 +72,7 @@ int KernelSize;
 ID3D10Effect* PPEffect;
 
 // Technique name for each post-process
-const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative" };
+const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative", "PPRetro" };
 
 // Technique pointers for each post-process
 ID3D10EffectTechnique* PPTechniques[NumPostProcesses];
@@ -516,7 +517,11 @@ void SelectPostProcess( PostProcesses filter )
 		{
 
 		}
+		case Retro:
+		{
 
+		}
+		break;
 	}
 }
 
@@ -698,7 +703,7 @@ void RenderScene()
 			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
 			g_pd3dDevice->IASetInputLayout(NULL);
 			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-			PPTechniques[GaussianBlur]->GetPassByName("Vertical")->Apply(0);
+			PPTechniques[GaussianBlur]->GetPassByIndex(1)->Apply(0);
 			g_pd3dDevice->Draw(4, 0);
 		}
 	}
@@ -888,6 +893,14 @@ void UpdateScene( float updateTime )
 	if (KeyHit(Key_3))
 	{
 		FullScreenFilters.push_back(UnderWater);
+	}
+	if (KeyHit(Key_4))
+	{
+		// Depth of field
+	}
+	if (KeyHit(Key_5))
+	{
+		FullScreenFilters.push_back(Retro);
 	}
 
 	if (KeyHit(Key_Numpad8))

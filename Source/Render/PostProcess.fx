@@ -360,7 +360,6 @@ float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 	{    
         x = ppIn.UVScene.x + ((i - KernelSize / 2) / ViewportWidth);
         ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel[float2(i, 0)];
-
     }
 	
     return float4(ppColour, 1.0);
@@ -393,14 +392,23 @@ float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 // Post-processing shader that applies a negative on top of the image
 float4 PPNegativeShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-	// Sample the texture colour at the location UVSCene and multiply it by DiffuseColour (the colour of the material extracted from the .X file, variable already set up)
-    float4 textureColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
-    textureColour.r = 1.0 - textureColour.r;
-    textureColour.g = 1.0 - textureColour.g;
-    textureColour.b = 1.0 - textureColour.b;
+    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
+    ppColour.rgb = 1.0 - ppColour.rgb;
+    return float4(ppColour, 1.0f);
+}
 
-	// Return a float4 containing the tinted colour in rgb and 1.0 in alpha
-    return float4(textureColour.xyz, 1.0f);
+float4 PPRetroShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+    float3 ppColour = float3(0, 0, 0);
+
+    float x = ppIn.UVScene.x * ViewportWidth;
+    float y = ppIn.UVScene.y * ViewportHeight;
+
+    // This pixel needs to find the closest anchor pixel and take its colour
+    //if(x)
+
+
+    return float4(ppColour, 1.0f);
 }
 
 
@@ -632,6 +640,20 @@ technique10 PPNegative
         SetVertexShader(CompileShader(vs_4_0, PPQuad()));
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPNegativeShader()));
+
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
+}
+
+technique10 PPRetro
+{
+    pass P0
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPRetroShader()));
 
         SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);

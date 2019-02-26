@@ -460,7 +460,7 @@
       <Rotation Radians="true" X="0" Y="0" Z="0"/>
     </Entity>
 
-    <Entity Type="Wall1" Name="Wall">
+    <Entity Type="Wall2" Name="Wall">
       <Position X="0" Y="0" Z="0"/>
       <Rotation Radians="true" X="0" Y="50" Z="0"/>
     <Scale X="50.0" Y="50.0" Z="50.0"/>
