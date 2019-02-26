@@ -30,7 +30,6 @@ float  HeatHazeTimer;
 float UnderWaterTimer;
 Texture2D<float> Kernel;
 int KernelSize;
-float KernelSum;
 
 // Texture maps
 Texture2D SceneTexture;   // Texture containing the scene to copy to the full screen quad
@@ -360,7 +359,8 @@ float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     for (int i = 0; i < KernelSize; i++)
 	{    
         x = ppIn.UVScene.x + ((i - KernelSize / 2) / ViewportWidth);
-        ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)) * Kernel.Sample(BilinearWrap, float2(i, 0));
+        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel[float2(i, 0)];
+
     }
 	
     return float4(ppColour, 1.0);
@@ -376,7 +376,7 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     for (int i = 0; i < KernelSize; i++)
     {
         y = ppIn.UVScene.y + ((i - KernelSize / 2) / ViewportHeight);
-        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel.Sample(PointClamp, float2(i, 0));
+        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel[float2(i, 0)];
     }
 	
     return float4(ppColour, 1.0);

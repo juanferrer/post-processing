@@ -62,8 +62,9 @@ const float HeatHazeSpeed = 1.0f;
 float UnderWaterTimer = 0.0f;
 const float UnderWaterSpeed = 1.0f;
 float BlurLevel = 1;
-int BlurRadius = 3 * BlurLevel;
-int KernelSize = BlurRadius * 2 + 1;
+float BlurStep = 0.1f;
+int BlurRadius;
+int KernelSize;
 
 
 // Separate effect file for full screen & area post-processes. Not necessary to use a separate file, but convenient given the architecture of this lab
@@ -114,7 +115,6 @@ ID3D10Texture2D* KernelArray = NULL;
 ID3D10EffectScalarVariable* KernelSizeVar = NULL;
 extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of the viewport needed to help access the scene texture (see poly post-processing shaders)
 extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
-ID3D10EffectScalarVariable* KernelSum = NULL;
 
 HSLColour GradientTopColour(0, 1, 0.5f);
 HSLColour GradientBotColour(240, 1, 0.5f);
@@ -343,7 +343,6 @@ bool PostProcessSetup()
 	UnderWaterTimerVar   = PPEffect->GetVariableByName( "UnderWaterTimer" )->AsScalar();
 	KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsShaderResource();
 	KernelSizeVar		 = PPEffect->GetVariableByName( "KernelSize" )->AsScalar();
-	KernelSum			 = PPEffect->GetVariableByName( "KernelSum" )->AsScalar();
 	ViewportWidthVar	 = PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
 	ViewportHeightVar	 = PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
 
@@ -459,6 +458,8 @@ void SelectPostProcess( PostProcesses filter )
 			const double pi = 3.14159265359;
 			const double e =  2.71828182846;
 			const double sigma = BlurLevel;
+			BlurRadius = 3 * sigma;
+			KernelSize = BlurRadius * 2 + 1;
 			double* kernel = new double[KernelSize];
 			double sum = 0.0;
 
@@ -494,7 +495,6 @@ void SelectPostProcess( PostProcesses filter )
 			}
 
 			KernelSizeVar->SetInt(KernelSize);
-			KernelSum->SetFloat(sum);
 			KernelVar->SetResource(KernelRV);
 			KernelArray->Unmap(D3D10CalcSubresource(0, 0, 1));
 
@@ -689,7 +689,7 @@ void RenderScene()
 		PPTechniques[FullScreenFilters[i]]->GetPassByIndex(0)->Apply(0);
 		g_pd3dDevice->Draw(4, 0);
 
-		/*if (FullScreenFilters[i] == GaussianBlur)
+		if (FullScreenFilters[i] == GaussianBlur)
 		{
 			// Do the second pass here
 			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
@@ -700,7 +700,7 @@ void RenderScene()
 			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 			PPTechniques[GaussianBlur]->GetPassByName("Vertical")->Apply(0);
 			g_pd3dDevice->Draw(4, 0);
-		}*/
+		}
 	}
 
 	// Now rerender everything to the Backbuffer
@@ -890,13 +890,18 @@ void UpdateScene( float updateTime )
 		FullScreenFilters.push_back(UnderWater);
 	}
 
-	if (KeyHit(Key_8))
+	if (KeyHit(Key_Numpad8))
 	{
 		// Increase radius
+		BlurLevel += BlurStep;
 	}
-	if (KeyHit(Key_2))
+	if (KeyHit(Key_Numpad2))
 	{
 		// Decrease radius
+		if (BlurLevel > BlurStep)
+		{
+			BlurRadius -= BlurStep;
+		}
 	}
 
 	// Rotate cube and attach light to it
