@@ -254,8 +254,8 @@ bool PostProcessSetup()
 	arrayDesc.Height = 1;	// Since we're passing an array, we only need one row
 	arrayDesc.MipLevels = 1;
 	arrayDesc.ArraySize = 1;
-	//arrayDesc.Format = DXGI_FORMAT_R32_FLOAT; // 32-bit floats
-	arrayDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // RGBA texture (8-bits each)
+	arrayDesc.Format = DXGI_FORMAT_R32_FLOAT; // 32-bit floats
+	//arrayDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM; // RGBA texture (8-bits each)
 	arrayDesc.SampleDesc.Count = 1;
 	arrayDesc.SampleDesc.Quality = 0;
 	arrayDesc.Usage = D3D10_USAGE_DYNAMIC;
@@ -474,7 +474,7 @@ void SelectPostProcess( PostProcesses filter )
 			// https://docs.microsoft.com/en-gb/windows/desktop/direct3d10/d3d10-graphics-programming-guide-resources-creating-textures
 			D3D10_MAPPED_TEXTURE2D mappedTex;
 			KernelArray->Map(D3D10CalcSubresource(0, 0, 1), D3D10_MAP_WRITE_DISCARD, 0, &mappedTex);
-			double* arr = (double*)mappedTex.pData;
+			float* arr = (float*)mappedTex.pData;
 
 			for (int i = 0; i < KernelSize / 2 + 1; ++i)
 			{
@@ -490,7 +490,7 @@ void SelectPostProcess( PostProcesses filter )
 			for (int i = 0; i < KernelSize; ++i)
 			{
 				int colStart = i * 4;
-				arr[colStart] = kernel[i] / sum;
+				arr[i] = kernel[i] / sum;
 			}
 
 			KernelSizeVar->SetInt(KernelSize);
@@ -689,7 +689,7 @@ void RenderScene()
 		PPTechniques[FullScreenFilters[i]]->GetPassByIndex(0)->Apply(0);
 		g_pd3dDevice->Draw(4, 0);
 
-		if (FullScreenFilters[i] == GaussianBlur)
+		/*if (FullScreenFilters[i] == GaussianBlur)
 		{
 			// Do the second pass here
 			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
@@ -700,7 +700,7 @@ void RenderScene()
 			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 			PPTechniques[GaussianBlur]->GetPassByName("Vertical")->Apply(0);
 			g_pd3dDevice->Draw(4, 0);
-		}
+		}*/
 	}
 
 	// Now rerender everything to the Backbuffer
