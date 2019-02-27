@@ -30,6 +30,7 @@ float  HeatHazeTimer;
 float UnderWaterTimer;
 Texture2D<float> Kernel;
 int KernelSize;
+float PixelSize;
 
 // Texture maps
 Texture2D SceneTexture;   // Texture containing the scene to copy to the full screen quad
@@ -399,14 +400,17 @@ float4 PPNegativeShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 
 float4 PPRetroShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-    float3 ppColour = float3(0, 0, 0);
+    // All of the pixels inside a "big pixel" will take the colour of the first pixel
+    // of that "big pixel"
+    float2 pixelatedUV = ppIn.UVScene.xy / PixelSize;
+    pixelatedUV = round(pixelatedUV);
+    pixelatedUV *= PixelSize;
 
-    float x = ppIn.UVScene.x * ViewportWidth;
-    float y = ppIn.UVScene.y * ViewportHeight;
+    float3 ppColour = PostProcessMap.Sample(PointClamp, pixelatedUV);
 
-    // This pixel needs to find the closest anchor pixel and take its colour
-    //if(x)
+    int numberOfColours = 16;
 
+    ppColour = floor(ppColour * numberOfColours) / numberOfColours;
 
     return float4(ppColour, 1.0f);
 }

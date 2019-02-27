@@ -46,6 +46,7 @@ enum PostProcesses
 	UnderWater,
 	Negative,
 	Retro,
+	Bloom,
 	NumPostProcesses,
 };
 
@@ -72,7 +73,7 @@ int KernelSize;
 ID3D10Effect* PPEffect;
 
 // Technique name for each post-process
-const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative", "PPRetro" };
+const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative", "PPRetro", "PPBloom" };
 
 // Technique pointers for each post-process
 ID3D10EffectTechnique* PPTechniques[NumPostProcesses];
@@ -114,6 +115,7 @@ ID3D10EffectShaderResourceVariable* KernelVar = NULL;
 ID3D10ShaderResourceView* KernelRV = NULL;
 ID3D10Texture2D* KernelArray = NULL;
 ID3D10EffectScalarVariable* KernelSizeVar = NULL;
+ID3D10EffectScalarVariable* PixelSizeVar = NULL;
 extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of the viewport needed to help access the scene texture (see poly post-processing shaders)
 extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
 
@@ -344,6 +346,7 @@ bool PostProcessSetup()
 	UnderWaterTimerVar   = PPEffect->GetVariableByName( "UnderWaterTimer" )->AsScalar();
 	KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsShaderResource();
 	KernelSizeVar		 = PPEffect->GetVariableByName( "KernelSize" )->AsScalar();
+	PixelSizeVar = PPEffect->GetVariableByName("PixelSize")->AsScalar();
 	ViewportWidthVar	 = PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
 	ViewportHeightVar	 = PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
 
@@ -519,7 +522,13 @@ void SelectPostProcess( PostProcesses filter )
 		}
 		case Retro:
 		{
-
+			float pixelSize = 0.007; // Bond. James Bond.
+			PixelSizeVar->SetFloat(pixelSize);
+		}
+		break;
+		case Bloom:
+		{
+			// https://github.com/arkenthera/YumeEngine/blob/master/Engine/Assets/Shaders/HLSL/Bloom.hlsl
 		}
 		break;
 	}
@@ -901,6 +910,10 @@ void UpdateScene( float updateTime )
 	if (KeyHit(Key_5))
 	{
 		FullScreenFilters.push_back(Retro);
+	}
+	if (KeyHit(Key_6))
+	{
+		FullScreenFilters.push_back(Bloom);
 	}
 
 	if (KeyHit(Key_Numpad8))
