@@ -398,6 +398,7 @@ float4 PPNegativeShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     return float4(ppColour, 1.0f);
 }
 
+// Post-processing shader that makes each pixel inside a "big pixel" take the same colour
 float4 PPRetroShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     // All of the pixels inside a "big pixel" will take the colour of the first pixel
@@ -410,7 +411,24 @@ float4 PPRetroShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 
     int numberOfColours = 16;
 
+    // Force the color into one of the available ones
     ppColour = floor(ppColour * numberOfColours) / numberOfColours;
+
+    return float4(ppColour, 1.0f);
+}
+
+
+float4 PPBloomShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
+    return float4(ppColour, 1.0f);
+}
+
+float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
+
+    // Apply a gaussian blur using a sigma directly proportional to delta(pixelDistance, focalDistance)
 
     return float4(ppColour, 1.0f);
 }
@@ -658,6 +676,34 @@ technique10 PPRetro
         SetVertexShader(CompileShader(vs_4_0, PPQuad()));
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPRetroShader()));
+
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
+}
+
+technique10 PPBloom
+{
+    pass P0
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPBloomShader()));
+
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
+}
+
+technique10 PPDepthOfField
+{
+    pass P0
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPDOFShader()));
 
         SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);

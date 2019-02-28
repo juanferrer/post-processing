@@ -47,6 +47,7 @@ enum PostProcesses
 	Negative,
 	Retro,
 	Bloom,
+	DepthOfField,
 	NumPostProcesses,
 };
 
@@ -73,7 +74,7 @@ int KernelSize;
 ID3D10Effect* PPEffect;
 
 // Technique name for each post-process
-const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative", "PPRetro", "PPBloom" };
+const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative", "PPRetro", "PPBloom", "PPDepthOfField" };
 
 // Technique pointers for each post-process
 ID3D10EffectTechnique* PPTechniques[NumPostProcesses];
@@ -531,6 +532,11 @@ void SelectPostProcess( PostProcesses filter )
 			// https://github.com/arkenthera/YumeEngine/blob/master/Engine/Assets/Shaders/HLSL/Bloom.hlsl
 		}
 		break;
+		case DepthOfField:
+		{
+
+		}
+		break;
 	}
 }
 
@@ -905,7 +911,7 @@ void UpdateScene( float updateTime )
 	}
 	if (KeyHit(Key_4))
 	{
-		// Depth of field
+		FullScreenFilters.push_back(DepthOfField);
 	}
 	if (KeyHit(Key_5))
 	{
