@@ -91,6 +91,7 @@ struct PS_POSTPROCESS_INPUT
     float4 ProjPos : SV_POSITION;
 	float2 UVScene : TEXCOORD0;
 	float2 UVArea  : TEXCOORD1;
+    float  Depth   : SV_Depth;
 };
 
 
@@ -124,6 +125,8 @@ PS_POSTPROCESS_INPUT PPQuad(VS_POSTPROCESS_INPUT vIn)
 	// the z value takes the depth value provided for the area (PPAreaDepth) and a w component of 1 to prevent the perspective divide (already did that in the C++)
 	vOut.ProjPos  = float4( vOut.UVScene * 2.0f - 1.0f, PPAreaDepth, 1.0f ); 
 	vOut.ProjPos.y = -vOut.ProjPos.y;
+
+    // Need to populate the depth
 	
     return vOut;
 }

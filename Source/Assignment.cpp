@@ -681,6 +681,7 @@ void RenderScene()
 	// Repeat the following process for each Post-Process effect in the array
 	for (int i = 0, size = FullScreenFilters.size(); i < size; ++i)
 	{
+		// Do not clear the depth buffer, since we're reading that
 		//g_pd3dDevice->ClearDepthStencilView(DepthStencilView, D3D10_CLEAR_DEPTH, 1.0f, 0);
 		// Select the resource texture to use
 		if (i == 0)
