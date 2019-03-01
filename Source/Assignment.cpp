@@ -697,6 +697,68 @@ void RenderScene()
 
 	//------------------------------------------------
 
+	// Perform a quick copy, so that we can write to a rendered texture
+	PostProcessMapVar->SetResource(SceneShaderResource);
+	// Increase the index only when using the shader resources
+	g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], NULL);
+	SelectPostProcess(Copy);
+	SetFullScreenPostProcessArea(); // Define the full-screen as the area to affect
+	g_pd3dDevice->IASetInputLayout(NULL);
+	g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	PPTechniques[Copy]->GetPassByIndex(0)->Apply(0);
+	g_pd3dDevice->Draw(4, 0);
+
+	//**|PPPOLY|***************************************
+	// POLY POST PROCESS RENDER PASS
+	// The scene has been rendered in full into a texture then copied to the back-buffer. However, the post-processed polygons were missed out. Now render the entities
+	// again, but only the post-processed materials. These are rendered to the back-buffer in the correct places in the scene, but most importantly their shaders will
+	// have the scene texture available to them. So these polygons can distort or affect the scene behind them (e.g. distortion through cut glass). Note that this also
+	// means we can do blending (additive, multiplicative etc.) in the shader. The post-processed materials are identified with a boolean (RenderMethod.cpp). This entire
+	// approach works even better with "bucket" rendering, where post-process shaders are held in a separate bucket - making it unnecessary to "RenderAllEntities" as 
+	// we are doing here.
+
+	// NOTE: Post-processing - need to set the back buffer as a render target. Relying on the fact that the section above already did that
+	// Polygon post-processing occurs in the scene rendering code (RenderMethod.cpp) - so pass over the scene texture and viewport dimensions for the scene post-processing materials/shaders
+	SetSceneTexture(SceneShaderResource, BackBufferWidth, BackBufferHeight);
+	g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
+
+	// Render all entities again, but flag that we only want the post-processed polygons
+	EntityManager.RenderAllEntities(MainCamera, true);
+
+	//************************************************
+
+	//------------------------------------------------
+
+	// AREA POST PROCESS RENDER PASS - Render smaller quad on the back-buffer mapped with a matching area of the scene texture, with different post-processing
+
+	// NOTE: Post-processing - need to render to the back buffer and select scene texture for use in shader. Relying on the fact that the section above already did that
+
+	// Will have post-processed area over the moving cube
+	CEntity* cubey = EntityManager.GetEntity("Cubey");
+
+	// Set the area size, 20 units wide and high, 0 depth offset. This sets up a viewport space quad for the post-process to work on
+	// Note that the function needs the camera to turn the cube's point into a camera facing rectangular area
+	SetPostProcessArea(MainCamera, cubey->Position(), 20, 20, -9);
+
+	// Select one of the post-processing techniques and render the area using it
+	SelectPostProcess(Spiral); // Make sure you also update the line below when you change the post-process method here!
+	g_pd3dDevice->IASetInputLayout(NULL);
+	g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	PPTechniques[Spiral]->GetPassByIndex(0)->Apply(0);
+	g_pd3dDevice->Draw(4, 0);
+
+	// Wall windows shader
+	CEntity* wallWindow = EntityManager.GetEntity("Wall");
+	// Need to create a non-camera-facing quad for this
+	CVector3 pos = wallWindow->Position();
+	pos.y = 12.5f;
+	SetPostProcessArea(MainCamera, pos, 12.5f, 12.5f, 2, false);
+
+	SelectPostProcess(Negative);
+	g_pd3dDevice->IASetInputLayout(NULL);
+	g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	PPTechniques[Negative]->GetPassByIndex(0)->Apply(0);
+	g_pd3dDevice->Draw(4, 0);
 
 	//------------------------------------------------
 	// FULL SCREEN POST PROCESS RENDER PASS - Render full screen quad on the back-buffer mapped with the scene texture, with post-processing
@@ -706,19 +768,11 @@ void RenderScene()
 	{
 		// Do not clear the depth buffer, since we're reading from there
 		//g_pd3dDevice->ClearDepthStencilView(DepthStencilView, D3D10_CLEAR_DEPTH, 1.0f, 0);
-		// Select the resource texture to use
-		if (i == 0)
-		{
-			// First effect
-			PostProcessMapVar->SetResource(SceneShaderResource);
-		}
-		else
-		{
-			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
-			// Increase the index only when using the shader resources
-			PostProcessIndex = (PostProcessIndex + 1) % 2;
-		}
-		// Select the back buffer to use for rendering (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
+		PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
+		// Increase the index only when using the shader resources
+		PostProcessIndex = (PostProcessIndex + 1) % 2;
+
+		// Select render target (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
 		// Additionally, pass NULL as a depth stencil, because we want to use it as a shader resource
 		g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], NULL);
 		DepthMapVar->SetResource(DepthShaderView);
@@ -759,61 +813,6 @@ void RenderScene()
 	g_pd3dDevice->IASetInputLayout(NULL);
 	g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	PPTechniques[Copy]->GetPassByIndex(0)->Apply(0);
-	g_pd3dDevice->Draw(4, 0);
-
-	//------------------------------------------------
-
-
-	//**|PPPOLY|***************************************
-	// POLY POST PROCESS RENDER PASS
-	// The scene has been rendered in full into a texture then copied to the back-buffer. However, the post-processed polygons were missed out. Now render the entities
-	// again, but only the post-processed materials. These are rendered to the back-buffer in the correct places in the scene, but most importantly their shaders will
-	// have the scene texture available to them. So these polygons can distort or affect the scene behind them (e.g. distortion through cut glass). Note that this also
-	// means we can do blending (additive, multiplicative etc.) in the shader. The post-processed materials are identified with a boolean (RenderMethod.cpp). This entire
-	// approach works even better with "bucket" rendering, where post-process shaders are held in a separate bucket - making it unnecessary to "RenderAllEntities" as 
-	// we are doing here.
-
-	g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView);
-	// NOTE: Post-processing - need to set the back buffer as a render target. Relying on the fact that the section above already did that
-	// Polygon post-processing occurs in the scene rendering code (RenderMethod.cpp) - so pass over the scene texture and viewport dimensions for the scene post-processing materials/shaders
-	SetSceneTexture( SceneShaderResource, BackBufferWidth, BackBufferHeight );
-
-	// Render all entities again, but flag that we only want the post-processed polygons
-	EntityManager.RenderAllEntities( MainCamera, true );
-
-	//************************************************
-
-
-	//------------------------------------------------
-	// AREA POST PROCESS RENDER PASS - Render smaller quad on the back-buffer mapped with a matching area of the scene texture, with different post-processing
-
-	// NOTE: Post-processing - need to render to the back buffer and select scene texture for use in shader. Relying on the fact that the section above already did that
-
-	// Will have post-processed area over the moving cube
-	CEntity* cubey = EntityManager.GetEntity( "Cubey" );
-
-	// Set the area size, 20 units wide and high, 0 depth offset. This sets up a viewport space quad for the post-process to work on
-	// Note that the function needs the camera to turn the cube's point into a camera facing rectangular area
-	SetPostProcessArea( MainCamera, cubey->Position(), 20, 20, -9 );
-
-	// Select one of the post-processing techniques and render the area using it
-	SelectPostProcess( Spiral ); // Make sure you also update the line below when you change the post-process method here!
-	g_pd3dDevice->IASetInputLayout( NULL );
-	g_pd3dDevice->IASetPrimitiveTopology( D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP );
-	PPTechniques[Spiral]->GetPassByIndex(0)->Apply(0);
-	g_pd3dDevice->Draw( 4, 0 );
-
-	// Wall windows shader
-	CEntity* wallWindow = EntityManager.GetEntity("Wall");
-	// Need to create a non-camera-facing quad for this
-	CVector3 pos = wallWindow->Position();
-	pos.y = 12.5f;
-	SetPostProcessArea(MainCamera, pos, 12.5f, 12.5f, 2, false);
-	
-	SelectPostProcess(Negative);
-	g_pd3dDevice->IASetInputLayout(NULL);
-	g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-	PPTechniques[Negative]->GetPassByIndex(0)->Apply(0);
 	g_pd3dDevice->Draw(4, 0);
 
 	//------------------------------------------------
