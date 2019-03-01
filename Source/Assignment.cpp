@@ -94,6 +94,7 @@ ID3D10ShaderResourceView* DistortMap = NULL;
 // Variables to link C++ post-process textures to HLSL shader variables (for area / full-screen post-processing)
 ID3D10EffectShaderResourceVariable* SceneTextureVar = NULL;
 ID3D10EffectShaderResourceVariable* PostProcessMapVar = NULL; // Single shader variable used for the three maps above (noise, burn, distort). Only one is needed at a time
+ID3D10EffectShaderResourceVariable* DepthMapVar = NULL;
 
 // Variables specifying the area used for post-processing
 ID3D10EffectVectorVariable* PPAreaTopLeftVar = NULL;
@@ -117,6 +118,8 @@ ID3D10ShaderResourceView* KernelRV = NULL;
 ID3D10Texture2D* KernelArray = NULL;
 ID3D10EffectScalarVariable* KernelSizeVar = NULL;
 ID3D10EffectScalarVariable* PixelSizeVar = NULL;
+ID3D10EffectScalarVariable* FocalDistanceVar = NULL;
+ID3D10EffectScalarVariable* FarClipVar = NULL;
 extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of the viewport needed to help access the scene texture (see poly post-processing shaders)
 extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
 
@@ -149,6 +152,7 @@ extern const string ShaderFolder;
 // Get reference to global DirectX variables from another source file
 extern ID3D10Device*           g_pd3dDevice;
 extern IDXGISwapChain*         SwapChain;
+extern ID3D10ShaderResourceView* DepthShaderView;
 extern ID3D10DepthStencilView* DepthStencilView;
 extern ID3D10RenderTargetView* BackBufferRenderTarget;
 extern ID3D10RenderTargetView* PostProcessingRenderTargets[];
@@ -265,6 +269,7 @@ bool PostProcessSetup()
 	arrayDesc.Usage = D3D10_USAGE_DYNAMIC;
 	arrayDesc.BindFlags = D3D10_BIND_SHADER_RESOURCE;
 	arrayDesc.CPUAccessFlags = D3D10_CPU_ACCESS_WRITE;
+
 	// Create the "scene texture" - the texture into which the scene will be rendered in the first pass
 	D3D10_TEXTURE2D_DESC textureDesc;
 	textureDesc.Width  = BackBufferWidth;  // Match views to viewport size
@@ -294,6 +299,13 @@ bool PostProcessSetup()
 	srDesc.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE2D;
 	srDesc.Texture2D.MostDetailedMip = 0;
 	srDesc.Texture2D.MipLevels = 1;
+
+	// Depth buffer desc
+	D3D10_SHADER_RESOURCE_VIEW_DESC dbsrDesc;
+	dbsrDesc.Format = DXGI_FORMAT_R32_FLOAT;
+	dbsrDesc.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE2D;
+	dbsrDesc.Texture2D.MostDetailedMip = 0;
+	dbsrDesc.Texture2D.MipLevels = 1;
 
 	D3D10_SHADER_RESOURCE_VIEW_DESC saDesc;
 	saDesc.Format = arrayDesc.Format;
@@ -330,26 +342,29 @@ bool PostProcessSetup()
 	}
 
 	// Link to HLSL variables in post-process shaders
-	SceneTextureVar      = PPEffect->GetVariableByName( "SceneTexture" )->AsShaderResource();
-	PostProcessMapVar    = PPEffect->GetVariableByName( "PostProcessMap" )->AsShaderResource();
-	PPAreaTopLeftVar     = PPEffect->GetVariableByName( "PPAreaTopLeft" )->AsVector();
-	PPAreaBottomRightVar = PPEffect->GetVariableByName( "PPAreaBottomRight" )->AsVector();
-	PPAreaDepthVar       = PPEffect->GetVariableByName( "PPAreaDepth" )->AsScalar();
-	TintColourVar        = PPEffect->GetVariableByName( "TintColour" )->AsVector();
-	TintColour2Var       = PPEffect->GetVariableByName( "TintColour2" )->AsVector();
-	UnderWaterTintColourVar = PPEffect->GetVariableByName("UnderWaterTintColour")->AsVector();
-	NoiseScaleVar        = PPEffect->GetVariableByName( "NoiseScale" )->AsVector();
-	NoiseOffsetVar       = PPEffect->GetVariableByName( "NoiseOffset" )->AsVector();
-	DistortLevelVar      = PPEffect->GetVariableByName( "DistortLevel" )->AsScalar();
-	BurnLevelVar         = PPEffect->GetVariableByName( "BurnLevel" )->AsScalar();
-	SpiralTimerVar       = PPEffect->GetVariableByName( "SpiralTimer" )->AsScalar();
-	HeatHazeTimerVar     = PPEffect->GetVariableByName( "HeatHazeTimer" )->AsScalar();
-	UnderWaterTimerVar   = PPEffect->GetVariableByName( "UnderWaterTimer" )->AsScalar();
-	KernelVar			 = PPEffect->GetVariableByName( "Kernel" )->AsShaderResource();
-	KernelSizeVar		 = PPEffect->GetVariableByName( "KernelSize" )->AsScalar();
-	PixelSizeVar = PPEffect->GetVariableByName("PixelSize")->AsScalar();
-	ViewportWidthVar	 = PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
-	ViewportHeightVar	 = PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
+	SceneTextureVar			= PPEffect->GetVariableByName( "SceneTexture" )->AsShaderResource();
+	PostProcessMapVar		= PPEffect->GetVariableByName( "PostProcessMap" )->AsShaderResource();
+	DepthMapVar				= PPEffect->GetVariableByName( "DepthMap" )->AsShaderResource();
+	PPAreaTopLeftVar		= PPEffect->GetVariableByName( "PPAreaTopLeft" )->AsVector();
+	PPAreaBottomRightVar	= PPEffect->GetVariableByName( "PPAreaBottomRight" )->AsVector();
+	PPAreaDepthVar			= PPEffect->GetVariableByName( "PPAreaDepth" )->AsScalar();
+	TintColourVar			= PPEffect->GetVariableByName( "TintColour" )->AsVector();
+	TintColour2Var			= PPEffect->GetVariableByName( "TintColour2" )->AsVector();
+	UnderWaterTintColourVar = PPEffect->GetVariableByName( "UnderWaterTintColour")->AsVector();
+	NoiseScaleVar			= PPEffect->GetVariableByName( "NoiseScale" )->AsVector();
+	NoiseOffsetVar			= PPEffect->GetVariableByName( "NoiseOffset" )->AsVector();
+	DistortLevelVar			= PPEffect->GetVariableByName( "DistortLevel" )->AsScalar();
+	BurnLevelVar			= PPEffect->GetVariableByName( "BurnLevel" )->AsScalar();
+	SpiralTimerVar			= PPEffect->GetVariableByName( "SpiralTimer" )->AsScalar();
+	HeatHazeTimerVar		= PPEffect->GetVariableByName( "HeatHazeTimer" )->AsScalar();
+	UnderWaterTimerVar		= PPEffect->GetVariableByName( "UnderWaterTimer" )->AsScalar();
+	KernelVar				= PPEffect->GetVariableByName( "Kernel" )->AsShaderResource();
+	KernelSizeVar			= PPEffect->GetVariableByName( "KernelSize" )->AsScalar();
+	PixelSizeVar			= PPEffect->GetVariableByName( "PixelSize" )->AsScalar();
+	FocalDistanceVar		= PPEffect->GetVariableByName( "FocalDistance" )->AsScalar();
+	FarClipVar				= PPEffect->GetVariableByName( "FarClip" )->AsScalar();
+	ViewportWidthVar		= PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
+	ViewportHeightVar		= PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
 
 	return true;
 }
@@ -534,7 +549,7 @@ void SelectPostProcess( PostProcesses filter )
 		break;
 		case DepthOfField:
 		{
-
+			FocalDistanceVar->SetFloat(0.5f);
 		}
 		break;
 	}
@@ -681,7 +696,7 @@ void RenderScene()
 	// Repeat the following process for each Post-Process effect in the array
 	for (int i = 0, size = FullScreenFilters.size(); i < size; ++i)
 	{
-		// Do not clear the depth buffer, since we're reading that
+		// Do not clear the depth buffer, since we're reading from there
 		//g_pd3dDevice->ClearDepthStencilView(DepthStencilView, D3D10_CLEAR_DEPTH, 1.0f, 0);
 		// Select the resource texture to use
 		if (i == 0)
@@ -696,7 +711,10 @@ void RenderScene()
 			PostProcessIndex = (PostProcessIndex + 1) % 2;
 		}
 		// Select the back buffer to use for rendering (will ignore depth-buffer for full-screen quad) and select scene texture for use in shader
-		g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
+		// Additionally, pass NULL as a depth stencil, because we want to use it as a shader resource
+		g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], NULL);
+		DepthMapVar->SetResource(DepthShaderView);
+		FarClipVar->SetFloat(MainCamera->GetFarClip());
 
 
 		// Prepare shader settings for the current full screen filter
@@ -716,7 +734,7 @@ void RenderScene()
 			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
 			// Increase the index only when using the shader resources
 			PostProcessIndex = (PostProcessIndex + 1) % 2;
-			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], DepthStencilView);
+			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], NULL);
 			g_pd3dDevice->IASetInputLayout(NULL);
 			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 			PPTechniques[GaussianBlur]->GetPassByIndex(1)->Apply(0);
@@ -725,7 +743,7 @@ void RenderScene()
 	}
 
 	// Now rerender everything to the Backbuffer
-	g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, DepthStencilView);
+	g_pd3dDevice->OMSetRenderTargets(1, &BackBufferRenderTarget, NULL);
 	PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
 	SelectPostProcess(Copy);
 	SetFullScreenPostProcessArea();

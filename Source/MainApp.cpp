@@ -29,6 +29,7 @@ ID3D10Device* g_pd3dDevice = NULL;
 IDXGISwapChain*         SwapChain = NULL;
 ID3D10Texture2D*        DepthStencil = NULL;
 ID3D10DepthStencilView* DepthStencilView = NULL;
+ID3D10ShaderResourceView* DepthShaderView;
 ID3D10RenderTargetView* BackBufferRenderTarget = NULL;
 ID3D10RenderTargetView* PostProcessingRenderTargets[2];// = NULL;
 
@@ -112,17 +113,32 @@ bool D3DSetup( HWND hWnd )
 	descDepth.Height = BackBufferHeight;
 	descDepth.MipLevels = 1;
 	descDepth.ArraySize = 1;
-	descDepth.Format = DXGI_FORMAT_D32_FLOAT;
+	descDepth.Format = DXGI_FORMAT_R32_TYPELESS;
 	descDepth.SampleDesc.Count = 1;
 	descDepth.SampleDesc.Quality = 0;
 	descDepth.Usage = D3D10_USAGE_DEFAULT;
-	descDepth.BindFlags = D3D10_BIND_DEPTH_STENCIL;
+	descDepth.BindFlags = D3D10_BIND_DEPTH_STENCIL | D3D10_BIND_SHADER_RESOURCE;
 	descDepth.CPUAccessFlags = 0;
 	descDepth.MiscFlags = 0;
+
+	D3D10_DEPTH_STENCIL_VIEW_DESC descDSV;
+	descDSV.Format = DXGI_FORMAT_D32_FLOAT;
+	descDSV.ViewDimension = D3D10_DSV_DIMENSION_TEXTURE2D;
+	descDSV.Texture2D.MipSlice = 0;
+
+	D3D10_SHADER_RESOURCE_VIEW_DESC descSRV;
+	descSRV.Format = DXGI_FORMAT_R32_FLOAT;
+	descSRV.ViewDimension = D3D10_SRV_DIMENSION_TEXTURE2D;
+	descSRV.Texture2D.MipLevels = 1;
+	descSRV.Texture2D.MostDetailedMip = 0;
+
 	if( FAILED( g_pd3dDevice->CreateTexture2D( &descDepth, NULL, &DepthStencil ) )) return false;
 
 	// Create the depth stencil view, i.e. indicate that the texture just created is to be used as a depth buffer
-	if( FAILED( g_pd3dDevice->CreateDepthStencilView( DepthStencil, NULL, &DepthStencilView ) )) return false;
+	if( FAILED( g_pd3dDevice->CreateDepthStencilView( DepthStencil, &descDSV, &DepthStencilView ) )) return false;
+
+	// Create a shader resource view for the depth buffer, to be used for depth of field
+	if( FAILED( g_pd3dDevice->CreateShaderResourceView(DepthStencil, &descSRV, &DepthShaderView))) return false;
 
 	// Create a font using D3DX helper functions
     if (FAILED(D3DX10CreateFont( g_pd3dDevice, 12, 0, FW_BOLD, 1, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,

@@ -29,12 +29,15 @@ float  SpiralTimer;
 float  HeatHazeTimer;
 float UnderWaterTimer;
 Texture2D<float> Kernel;
-int KernelSize;
+uint KernelSize;
 float PixelSize;
+float FocalDistance;
+float FarClip;
 
 // Texture maps
 Texture2D SceneTexture;   // Texture containing the scene to copy to the full screen quad
 Texture2D PostProcessMap; // Second map for special purpose textures used during post-processing
+Texture2D DepthMap;   // Depth buffer, used for depth of field calculations
 
 // Samplers to use with the above texture maps. Specifies texture filtering and addressing mode to use when accessing texture pixels
 // Usually use point sampling for the scene texture (i.e. no bilinear/trilinear blending) since don't want to blur it in the copy process
@@ -91,7 +94,6 @@ struct PS_POSTPROCESS_INPUT
     float4 ProjPos : SV_POSITION;
 	float2 UVScene : TEXCOORD0;
 	float2 UVArea  : TEXCOORD1;
-    float  Depth   : SV_Depth;
 };
 
 
@@ -123,11 +125,9 @@ PS_POSTPROCESS_INPUT PPQuad(VS_POSTPROCESS_INPUT vIn)
 	             
 	// vOut.ProjPos contains the vertex positions of the quad to render, measured in viewport space here. The x and y are same as Scene UV coords but in range -1 to 1 (and flip y axis),
 	// the z value takes the depth value provided for the area (PPAreaDepth) and a w component of 1 to prevent the perspective divide (already did that in the C++)
-	vOut.ProjPos  = float4( vOut.UVScene * 2.0f - 1.0f, PPAreaDepth, 1.0f ); 
+    vOut.ProjPos = float4(vOut.UVScene * 2.0f - 1.0f, PPAreaDepth, 1.0f);
 	vOut.ProjPos.y = -vOut.ProjPos.y;
 
-    // Need to populate the depth
-	
     return vOut;
 }
 
@@ -139,7 +139,7 @@ PS_POSTPROCESS_INPUT PPQuad(VS_POSTPROCESS_INPUT vIn)
 // Post-processing shader that simply outputs the scene texture, i.e. no post-processing. A waste of processing, but illustrative
 float4 PPCopyShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 {
-	float3 ppColour = PostProcessMap.Sample( PointClamp, ppIn.UVScene );
+	float3 ppColour = PostProcessMap.Sample( PointClamp, ppIn.UVScene ).rgb;
 	return float4( ppColour, 1.0f );
 }
 
@@ -167,7 +167,7 @@ float4 PPGreyNoiseShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 	const float NoiseStrength = 0.5f; // How noticable the noise is
 
 	// Get texture colour, and average r, g & b to get a single grey value
-    float3 texColour = SceneTexture.Sample( PointClamp, ppIn.UVScene );
+    float3 texColour = SceneTexture.Sample( PointClamp, ppIn.UVScene ).rgb;
     float grey = (texColour.r + texColour.g + texColour.b) / 3.0f;
     
     // Get noise UV by scaling and offseting texture UV. Scaling adjusts how fine the noise is.
@@ -214,7 +214,7 @@ float4 PPBurnShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
     // Output scene texture untouched when current burnTexture texture value above burning range
 	else if (burnTexture.r >= BurnLevelMax)
     {
-		float3 ppColour = SceneTexture.Sample( PointClamp, ppIn.UVScene );
+		float3 ppColour = SceneTexture.Sample( PointClamp, ppIn.UVScene ).rgb;
 		return float4( ppColour, 1.0f );
 	}
 	
@@ -236,12 +236,12 @@ float4 PPBurnShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 		if (GlowLevel < 1.0f)
 		{		
 			// Blend from main texture colour on inside to burn tint in middle of burning area
-			ppColour = lerp( texColour, BurnColour * texColour, GlowLevel );
+			ppColour = lerp( texColour, BurnColour * texColour, GlowLevel ).rgb;
 		}
 		else
 		{
 			// Blend from burn tint in middle of burning area to bright glow at the burning edges
-			ppColour = lerp( BurnColour * texColour, GlowColour, GlowLevel - 1.0f );
+			ppColour = lerp( BurnColour * texColour, GlowColour, GlowLevel - 1.0f ).rgb;
 		}
 		return float4( ppColour, 1.0f );
 	}
@@ -263,7 +263,7 @@ float4 PPDistortShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 	float light = dot( normalize(DistortVector), float2(0.707f, 0.707f) ) * LightStrength;
 	
 	// Get final colour by adding fake light colour plus scene texture sampled with distort texture offset
-	float3 ppColour = light + SceneTexture.Sample( BilinearClamp, ppIn.UVScene + DistortLevel * DistortVector );
+	float3 ppColour = light + SceneTexture.Sample( BilinearClamp, ppIn.UVScene + DistortLevel * DistortVector ).rgb;
 
     return float4( ppColour, 1.0f );
 }
@@ -288,7 +288,7 @@ float4 PPSpiralShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 	float2 rotOffsetUV = mul( centreOffsetUV, rot2D );
 
 	// Sample texture at new position (centre UV + rotated UV offset)
-    float3 ppColour = PostProcessMap.Sample( BilinearClamp, centreUV + rotOffsetUV );
+    float3 ppColour = PostProcessMap.Sample( BilinearClamp, centreUV + rotOffsetUV ).rgb;
 
 	// Calculate alpha to display the effect in a softened circle, could use a texture rather than calculations for the same task.
 	// Uses the second set of area texture coordinates, which range from (0,0) to (1,1) over the area being processed
@@ -322,7 +322,7 @@ float4 PPHeatHazeShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 	float2 hazeOffset = float2(SinY, SinX) * EffectStrength * ppAlpha * (PPAreaBottomRight.xy - PPAreaTopLeft.xy);
 
 	// Get pixel from scene texture, offset using haze
-    float3 ppColour = SceneTexture.Sample( BilinearClamp, ppIn.UVScene + hazeOffset );
+    float3 ppColour = SceneTexture.Sample( BilinearClamp, ppIn.UVScene + hazeOffset ).rgb;
 
 	// Adjust alpha on a sine wave - better to have it nearer to 1.0 (but don't allow it to exceed 1.0)
     ppAlpha *= saturate(SinX * SinY * 0.33f + 0.55f);
@@ -336,15 +336,15 @@ float4 PPBoxBlurShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     // Average the value of all neighbouring pixels
     float x, y;
 
-    int BoxBlurSize = 20;
+    uint BoxBlurSize = 20;
 
-    for (int i = 0; i < BoxBlurSize; ++i)
+    for (uint i = 0; i < BoxBlurSize; ++i)
     {
         x = ppIn.UVScene.x + ((i - BoxBlurSize / 2) / ViewportWidth);
-        for (int j = 0; j < BoxBlurSize; ++j)
+        for (uint j = 0; j < BoxBlurSize; ++j)
         {
             y = ppIn.UVScene.y + ((j - BoxBlurSize / 2) / ViewportHeight);
-            ppColour += PostProcessMap.Sample(PointClamp, float2(x, y));
+            ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)).rgb;
         }
     }
 
@@ -360,10 +360,10 @@ float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 	// Needs to add the weighted value of all neighbouring pixels in X
     float x;
     float y = ppIn.UVScene.y;
-    for (int i = 0; i < KernelSize; i++)
+    for (uint i = 0; i < KernelSize; i++)
 	{    
         x = ppIn.UVScene.x + ((i - KernelSize / 2) / ViewportWidth);
-        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel[float2(i, 0)];
+        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)).rgb * Kernel[float2(i, 0)];
     }
 	
     return float4(ppColour, 1.0);
@@ -376,10 +376,10 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 	// Needs to add the weighted value of all neighbouring pixels in Y
     float x = ppIn.UVScene.x;
     float y;
-    for (int i = 0; i < KernelSize; i++)
+    for (uint i = 0; i < KernelSize; i++)
     {
         y = ppIn.UVScene.y + ((i - KernelSize / 2) / ViewportHeight);
-        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)) * Kernel[float2(i, 0)];
+        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)).rgb * Kernel[float2(i, 0)];
     }
 	
     return float4(ppColour, 1.0);
@@ -396,7 +396,7 @@ float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 // Post-processing shader that applies a negative on top of the image
 float4 PPNegativeShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
+    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
     ppColour.rgb = 1.0 - ppColour.rgb;
     return float4(ppColour, 1.0f);
 }
@@ -410,9 +410,9 @@ float4 PPRetroShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     pixelatedUV = round(pixelatedUV);
     pixelatedUV *= PixelSize;
 
-    float3 ppColour = PostProcessMap.Sample(PointClamp, pixelatedUV);
+    float3 ppColour = PostProcessMap.Sample(PointClamp, pixelatedUV).rgb;
 
-    int numberOfColours = 16;
+    uint numberOfColours = 16;
 
     // Force the color into one of the available ones
     ppColour = floor(ppColour * numberOfColours) / numberOfColours;
@@ -423,17 +423,38 @@ float4 PPRetroShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 
 float4 PPBloomShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
+    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
     return float4(ppColour, 1.0f);
 }
 
 float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene);
+    // Apply a box blur using a box size directly proportional to abs(pixelDistance - FocalDistance)
 
-    // Apply a gaussian blur using a sigma directly proportional to delta(pixelDistance, focalDistance)
+    float2 coords = float2(ppIn.UVScene.x, ppIn.UVScene.y);
 
-    return float4(ppColour, 1.0f);
+    float pixelDistance = DepthMap.Sample(PointClamp, coords).r;
+    float distanceToFocus = abs(pixelDistance - FocalDistance);
+
+    float3 ppColour = PostProcessMap.Sample(PointClamp, coords).rgb;
+
+    float x, y;
+
+    uint BoxBlurSize = 5 * distanceToFocus;
+
+    /*for (uint i = 0; i < BoxBlurSize; ++i)
+    {
+        x = ppIn.UVScene.x + ((i - BoxBlurSize / 2) / ViewportWidth);
+        for (uint j = 0; j < BoxBlurSize; ++j)
+        {
+            y = ppIn.UVScene.y + ((j - BoxBlurSize / 2) / ViewportHeight);
+            ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)).rgb;
+        }
+    }*/
+
+    ppColour /= BoxBlurSize * BoxBlurSize;
+
+    return float4(ppColour, distanceToFocus * FarClip);
 }
 
 
