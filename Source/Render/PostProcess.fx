@@ -473,6 +473,13 @@ float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     return float4(lerp(ppColour, blurColour, distanceFromFocus), 1.0f);
 }
 
+float4 PPVignetteShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
+
+    return float4(ppColour, 0.5);
+}
+
 
 //--------------------------------------------------------------------------------------
 // States
@@ -744,6 +751,20 @@ technique10 PPDepthOfField
         SetVertexShader(CompileShader(vs_4_0, PPQuad()));
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPDOFShader()));
+
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
+}
+
+technique10 PPVignette
+{
+    pass P0
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPVignetteShader()));
 
         SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);

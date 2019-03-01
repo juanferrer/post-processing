@@ -48,6 +48,7 @@ enum PostProcesses
 	Retro,
 	Bloom,
 	DepthOfField,
+	Vignette,
 	NumPostProcesses,
 };
 
@@ -77,7 +78,9 @@ float FocalStep = 0.0001;
 ID3D10Effect* PPEffect;
 
 // Technique name for each post-process
-const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort", "PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative", "PPRetro", "PPBloom", "PPDepthOfField" };
+const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort",
+"PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative", "PPRetro", "PPBloom", "PPDepthOfField",
+"PPVignette"};
 
 // Technique pointers for each post-process
 ID3D10EffectTechnique* PPTechniques[NumPostProcesses];
@@ -927,7 +930,6 @@ void UpdateScene( float updateTime )
 	{
 		FullScreenFilters.push_back(Gradient);
 	}
-
 	if (KeyHit(Key_2))
 	{
 		FullScreenFilters.push_back(GaussianBlur);
@@ -947,6 +949,14 @@ void UpdateScene( float updateTime )
 	if (KeyHit(Key_6))
 	{
 		FullScreenFilters.push_back(Bloom);
+	}
+	if (KeyHit(Key_7))
+	{
+		FullScreenFilters.push_back(Negative);
+	}
+	if (KeyHit(Key_8))
+	{
+		FullScreenFilters.push_back(Vignette);
 	}
 
 	if (KeyHeld(Key_Numpad8))
