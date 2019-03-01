@@ -430,6 +430,7 @@ float4 PPBloomShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
 
     // https://catlikecoding.com/unity/tutorials/advanced-rendering/bloom/
+    // https://github.com/Microsoft/DirectXTK/wiki/Writing-custom-shaders
 
     return float4(ppColour, 1.0f);
 }
