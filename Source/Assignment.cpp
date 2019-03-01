@@ -65,9 +65,12 @@ const float HeatHazeSpeed = 1.0f;
 float UnderWaterTimer = 0.0f;
 const float UnderWaterSpeed = 1.0f;
 float BlurLevel = 1;
-float BlurStep = 0.1f;
+float BlurStep = 0.1;
 int BlurRadius;
 int KernelSize;
+float FocalRange = 0.01;
+float FocalDistance = 0.9645;
+float FocalStep = 0.0001;
 
 
 // Separate effect file for full screen & area post-processes. Not necessary to use a separate file, but convenient given the architecture of this lab
@@ -119,6 +122,8 @@ ID3D10Texture2D* KernelArray = NULL;
 ID3D10EffectScalarVariable* KernelSizeVar = NULL;
 ID3D10EffectScalarVariable* PixelSizeVar = NULL;
 ID3D10EffectScalarVariable* FocalDistanceVar = NULL;
+ID3D10EffectScalarVariable* FocalRangeVar = NULL;
+ID3D10EffectScalarVariable* NearClipVar = NULL;
 ID3D10EffectScalarVariable* FarClipVar = NULL;
 extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of the viewport needed to help access the scene texture (see poly post-processing shaders)
 extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
@@ -362,6 +367,8 @@ bool PostProcessSetup()
 	KernelSizeVar			= PPEffect->GetVariableByName( "KernelSize" )->AsScalar();
 	PixelSizeVar			= PPEffect->GetVariableByName( "PixelSize" )->AsScalar();
 	FocalDistanceVar		= PPEffect->GetVariableByName( "FocalDistance" )->AsScalar();
+	FocalRangeVar			= PPEffect->GetVariableByName( "FocalRange" )->AsScalar();
+	NearClipVar				= PPEffect->GetVariableByName( "NearClip" )->AsScalar();
 	FarClipVar				= PPEffect->GetVariableByName( "FarClip" )->AsScalar();
 	ViewportWidthVar		= PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
 	ViewportHeightVar		= PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
@@ -549,7 +556,8 @@ void SelectPostProcess( PostProcesses filter )
 		break;
 		case DepthOfField:
 		{
-			FocalDistanceVar->SetFloat(0.5f);
+			FocalDistanceVar->SetFloat(FocalDistance);
+			FocalRangeVar->SetFloat(FocalRange);
 		}
 		break;
 	}
@@ -714,6 +722,7 @@ void RenderScene()
 		// Additionally, pass NULL as a depth stencil, because we want to use it as a shader resource
 		g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], NULL);
 		DepthMapVar->SetResource(DepthShaderView);
+		NearClipVar->SetFloat(MainCamera->GetNearClip());
 		FarClipVar->SetFloat(MainCamera->GetFarClip());
 
 
@@ -941,18 +950,36 @@ void UpdateScene( float updateTime )
 		FullScreenFilters.push_back(Bloom);
 	}
 
-	if (KeyHit(Key_Numpad8))
+	if (KeyHeld(Key_Numpad8))
 	{
 		// Increase radius
 		BlurLevel += BlurStep;
 	}
-	if (KeyHit(Key_Numpad2))
+	if (KeyHeld(Key_Numpad2))
 	{
 		// Decrease radius
 		if (BlurLevel > BlurStep)
 		{
-			BlurRadius -= BlurStep;
+			BlurLevel -= BlurStep;
 		}
+	}
+
+	if (KeyHeld(Key_Numpad9))
+	{
+		FocalRange += FocalStep;
+	}
+	if (KeyHeld(Key_Numpad7))
+	{
+		if (FocalRange > FocalStep) FocalRange -= FocalStep;
+	}
+
+	if (KeyHeld(Key_Numpad3))
+	{
+		if (FocalDistance < 1) FocalDistance += FocalStep;
+	}
+	if (KeyHeld(Key_Numpad1))
+	{
+		if (FocalDistance > FocalStep) FocalDistance -= FocalStep;
 	}
 
 	// Rotate cube and attach light to it

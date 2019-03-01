@@ -29,9 +29,11 @@ float  SpiralTimer;
 float  HeatHazeTimer;
 float UnderWaterTimer;
 Texture2D<float> Kernel;
-uint KernelSize;
+float KernelSize;
 float PixelSize;
 float FocalDistance;
+float FocalRange;
+float NearClip;
 float FarClip;
 
 // Texture maps
@@ -336,14 +338,14 @@ float4 PPBoxBlurShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     // Average the value of all neighbouring pixels
     float x, y;
 
-    uint BoxBlurSize = 20;
+    float BoxBlurSize = 20;
 
     for (uint i = 0; i < BoxBlurSize; ++i)
     {
-        x = ppIn.UVScene.x + ((i - BoxBlurSize / 2) / ViewportWidth);
+        x = ppIn.UVScene.x + ((i - BoxBlurSize / 2) / ViewportWidth) + (1 / ViewportWidth);
         for (uint j = 0; j < BoxBlurSize; ++j)
         {
-            y = ppIn.UVScene.y + ((j - BoxBlurSize / 2) / ViewportHeight);
+            y = ppIn.UVScene.y + ((j - BoxBlurSize / 2) / ViewportHeight) + (1 / ViewportHeight);
             ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)).rgb;
         }
     }
@@ -362,8 +364,9 @@ float4 PPGaussianBlurHorizontalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     float y = ppIn.UVScene.y;
     for (uint i = 0; i < KernelSize; i++)
 	{    
-        x = ppIn.UVScene.x + ((i - KernelSize / 2) / ViewportWidth);
-        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)).rgb * Kernel[float2(i, 0)];
+        // Add half a pixel compensation
+        x = ppIn.UVScene.x + ((i - KernelSize / 2) / ViewportWidth) + (0.5 / ViewportWidth);
+        ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)).rgb * Kernel[float2(i, 0)];
     }
 	
     return float4(ppColour, 1.0);
@@ -378,8 +381,9 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     float y;
     for (uint i = 0; i < KernelSize; i++)
     {
-        y = ppIn.UVScene.y + ((i - KernelSize / 2) / ViewportHeight);
-        ppColour += PostProcessMap.Sample(BilinearWrap, float2(x, y)).rgb * Kernel[float2(i, 0)];
+        // Add half a pixel compensation
+        y = ppIn.UVScene.y + ((i - KernelSize / 2) / ViewportHeight) + (0.5 / ViewportHeight);
+        ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)).rgb * Kernel[float2(i, 0)];
     }
 	
     return float4(ppColour, 1.0);
@@ -424,37 +428,49 @@ float4 PPRetroShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 float4 PPBloomShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
+
+    // https://catlikecoding.com/unity/tutorials/advanced-rendering/bloom/
+
     return float4(ppColour, 1.0f);
 }
 
 float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-    // Apply a box blur using a box size directly proportional to abs(pixelDistance - FocalDistance)
+    // Get pixel depth
+    float pixelDepth = DepthMap.Sample(PointClamp, ppIn.UVScene).r;
 
-    float2 coords = float2(ppIn.UVScene.x, ppIn.UVScene.y);
+    float distanceFromFocus = saturate(abs(pixelDepth - FocalDistance) / FocalRange);
 
-    float pixelDistance = DepthMap.Sample(PointClamp, coords).r;
-    float distanceToFocus = abs(pixelDistance - FocalDistance);
+    // Get the unblurred pixel colour
+    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
 
-    float3 ppColour = PostProcessMap.Sample(PointClamp, coords).rgb;
-
+    // Get the blurred pixel colour (use box blur for that)
+    // If only a single blur could be active at a time, it should
+    // get this from a precalculated texture using Gaussian blur
+    float3 blurColour = float3(0, 0, 0);
     float x, y;
 
-    uint BoxBlurSize = 5 * distanceToFocus;
+    float BoxBlurSize = 20;
 
-    /*for (uint i = 0; i < BoxBlurSize; ++i)
+    for (uint i = 0; i < BoxBlurSize; ++i)
     {
-        x = ppIn.UVScene.x + ((i - BoxBlurSize / 2) / ViewportWidth);
+        // Add 1 pixel compensation
+        x = ppIn.UVScene.x + ((i - BoxBlurSize / 2) / ViewportWidth) + (1 / ViewportWidth);
         for (uint j = 0; j < BoxBlurSize; ++j)
         {
-            y = ppIn.UVScene.y + ((j - BoxBlurSize / 2) / ViewportHeight);
-            ppColour += PostProcessMap.Sample(PointClamp, float2(x, y)).rgb;
+            // Add 1 pixel compensation
+            y = ppIn.UVScene.y + ((j - BoxBlurSize / 2) / ViewportHeight) + (1 / ViewportHeight);
+            blurColour += PostProcessMap.Sample(PointClamp, float2(x, y)).rgb;
         }
-    }*/
+    }
 
-    ppColour /= BoxBlurSize * BoxBlurSize;
+    blurColour /= BoxBlurSize * BoxBlurSize;
 
-    return float4(ppColour, distanceToFocus * FarClip);
+    // DEBUG
+    //blurColour = float3(0, 0, 0);
+
+    // Return a lerp of the colour depending on distance to the focus
+    return float4(lerp(ppColour, blurColour, distanceFromFocus), 1.0f);
 }
 
 
