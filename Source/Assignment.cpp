@@ -67,7 +67,6 @@ float UnderWaterTimer = 0.0f;
 const float UnderWaterSpeed = 1.0f;
 float BlurLevel = 1;
 float BlurStep = 0.1;
-int BlurRadius;
 int KernelSize;
 float FocalRange = 0.01;
 float FocalDistance = 0.9645;
@@ -119,15 +118,28 @@ ID3D10EffectScalarVariable* SpiralTimerVar = NULL;
 ID3D10EffectScalarVariable* HeatHazeTimerVar = NULL;
 ID3D10EffectScalarVariable* UnderWaterTimerVar = NULL;
 ID3D10EffectShaderResourceVariable* KernelVar = NULL;
-//ID3D10EffectMatrixVariable* KernelVar = NULL;
+
+// Gaussian blur
 ID3D10ShaderResourceView* KernelRV = NULL;
 ID3D10Texture2D* KernelArray = NULL;
 ID3D10EffectScalarVariable* KernelSizeVar = NULL;
 ID3D10EffectScalarVariable* PixelSizeVar = NULL;
+
+// Depth of field
 ID3D10EffectScalarVariable* FocalDistanceVar = NULL;
 ID3D10EffectScalarVariable* FocalRangeVar = NULL;
 ID3D10EffectScalarVariable* NearClipVar = NULL;
 ID3D10EffectScalarVariable* FarClipVar = NULL;
+
+// Other
+ID3D10ShaderResourceView* BlurredResource = NULL;
+ID3D10RenderTargetView* BlurredRenderTarget = NULL;
+ID3D10Texture2D* BlurredTexture = NULL;
+ID3D10EffectShaderResourceVariable* BlurredMapVar = NULL;
+ID3D10Texture2D* IntermediateBlurTexture = NULL;
+ID3D10ShaderResourceView* IntermediateBlurShaderResource = NULL;
+ID3D10RenderTargetView* IntermediateBlurRenderTarget = NULL;
+
 extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of the viewport needed to help access the scene texture (see poly post-processing shaders)
 extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
 
@@ -295,11 +307,15 @@ bool PostProcessSetup()
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTextures[0]))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTextures[1]))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&arrayDesc, NULL, &KernelArray))) return false;
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &BlurredTexture))) return false;
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &IntermediateBlurTexture))) return false;	
 
 	// Get a "view" of the texture as a render target - giving us an interface for rendering to the texture
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView( SceneTexture, NULL, &SceneRenderTarget ))) return false;
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTextures[0], NULL, &PostProcessingRenderTargets[0]))) return false;
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTextures[1], NULL, &PostProcessingRenderTargets[1]))) return false;
+	if (FAILED(g_pd3dDevice->CreateRenderTargetView(BlurredTexture, NULL, &BlurredRenderTarget))) return false;
+	if (FAILED(g_pd3dDevice->CreateRenderTargetView(IntermediateBlurTexture, NULL, &IntermediateBlurRenderTarget))) return false;
 
 	// And get a shader-resource "view" - giving us an interface for passing the texture to shaders
 	D3D10_SHADER_RESOURCE_VIEW_DESC srDesc;
@@ -324,6 +340,8 @@ bool PostProcessSetup()
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTextures[0], &srDesc, &PostProcessShaderResources[0]))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTextures[1], &srDesc, &PostProcessShaderResources[1]))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(KernelArray, &saDesc, &KernelRV))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(BlurredTexture, &srDesc, &BlurredResource))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(IntermediateBlurTexture, &srDesc, &IntermediateBlurShaderResource))) return false;
 	
 	// Load post-processing support textures
 	if (FAILED( D3DX10CreateShaderResourceViewFromFile( g_pd3dDevice, (MediaFolder + "Noise.png").c_str() ,   NULL, NULL, &NoiseMap,   NULL ) )) return false;
@@ -373,6 +391,7 @@ bool PostProcessSetup()
 	FocalRangeVar			= PPEffect->GetVariableByName( "FocalRange" )->AsScalar();
 	NearClipVar				= PPEffect->GetVariableByName( "NearClip" )->AsScalar();
 	FarClipVar				= PPEffect->GetVariableByName( "FarClip" )->AsScalar();
+	BlurredMapVar			= PPEffect->GetVariableByName( "BlurredMap" )->AsShaderResource();
 	ViewportWidthVar		= PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
 	ViewportHeightVar		= PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
 
@@ -393,6 +412,10 @@ void PostProcessShutdown()
 	if (PostProcessTextures[0]) PostProcessTextures[0]->Release();
 	if (PostProcessTextures[1]) PostProcessTextures[1]->Release();
 	if (KernelRV) KernelRV->Release();
+	if (KernelArray) KernelArray->Release();
+	if (BlurredTexture) BlurredTexture->Release();
+	if (BlurredRenderTarget) BlurredRenderTarget->Release();
+	if (BlurredResource) BlurredResource->Release();
 }
 
 //*****************************************************************************
@@ -401,6 +424,57 @@ void PostProcessShutdown()
 //-----------------------------------------------------------------------------
 // Post Process Setup / Update
 //-----------------------------------------------------------------------------
+
+void PrepareGaussianKernel(float blurLevel)
+{
+	const double pi = 3.14159265359;
+	const double e = 2.71828182846;
+	const double sigma = blurLevel;
+	const int blurRadius = 3 * sigma;
+	KernelSize = blurRadius * 2 + 1;
+	double* kernel = new double[KernelSize];
+	double sum = 0.0;
+
+	// https://en.wikipedia.org/w/index.php?title=Gaussian_blur#Mathematics
+	auto gaussianFunction = [pi, sigma, e](int x)
+	{
+		// r = 2 * sigma ^ 2
+		double r = 2.0 * sigma * sigma;
+		return (1.0 / sqrt(r * pi)) * pow(e, -((x * x) / r));
+	};
+
+	// https://docs.microsoft.com/en-us/windows/desktop/api/d3d10/nf-d3d10-id3d10texture2d-map
+	// https://docs.microsoft.com/en-gb/windows/desktop/direct3d10/d3d10-graphics-programming-guide-resources-creating-textures
+	D3D10_MAPPED_TEXTURE2D mappedTex;
+	KernelArray->Map(D3D10CalcSubresource(0, 0, 1), D3D10_MAP_WRITE_DISCARD, 0, &mappedTex);
+	float* arr = (float*)mappedTex.pData;
+
+	for (int i = 0; i < KernelSize / 2 + 1; ++i)
+	{
+		// First and last are the same, so are second and second to last, and so on
+		// We can store the value once and only go to the middle of the array (which will be an odd number)
+		double value = gaussianFunction(i - (KernelSize / 2));
+		kernel[i] = value;
+		kernel[(KernelSize - 1 - i)] = value;
+		sum += (value * ((i < KernelSize / 2) ? 2.0 : 1.0));
+	}
+
+	// And populate the array
+	for (int i = 0; i < KernelSize; ++i)
+	{
+		int colStart = i * 4;
+		arr[i] = kernel[i] / sum;
+	}
+
+	KernelSizeVar->SetInt(KernelSize);
+	KernelVar->SetResource(KernelRV);
+	KernelArray->Unmap(D3D10CalcSubresource(0, 0, 1));
+
+	// Set the viewport dimensions
+	ViewportWidthVar->SetFloat(static_cast<float>(BackBufferWidth));
+	ViewportHeightVar->SetFloat(static_cast<float>(BackBufferHeight));
+	delete[] kernel;
+}
 
 // Set up shaders for given post-processing filter (used for full screen and area processing)
 void SelectPostProcess( PostProcesses filter )
@@ -485,53 +559,7 @@ void SelectPostProcess( PostProcesses filter )
 
 		case GaussianBlur:
 		{
-			const double pi = 3.14159265359;
-			const double e =  2.71828182846;
-			const double sigma = BlurLevel;
-			BlurRadius = 3 * sigma;
-			KernelSize = BlurRadius * 2 + 1;
-			double* kernel = new double[KernelSize];
-			double sum = 0.0;
-
-			// https://en.wikipedia.org/w/index.php?title=Gaussian_blur#Mathematics
-			auto gaussianFunction = [pi, sigma, e](int x)
-			{
-				// r = 2 * sigma ^ 2
-				double r = 2.0 * sigma * sigma;
-				return (1.0 / sqrt(r * pi)) * pow(e, -((x * x) / r));
-			};
-
-			// https://docs.microsoft.com/en-us/windows/desktop/api/d3d10/nf-d3d10-id3d10texture2d-map
-			// https://docs.microsoft.com/en-gb/windows/desktop/direct3d10/d3d10-graphics-programming-guide-resources-creating-textures
-			D3D10_MAPPED_TEXTURE2D mappedTex;
-			KernelArray->Map(D3D10CalcSubresource(0, 0, 1), D3D10_MAP_WRITE_DISCARD, 0, &mappedTex);
-			float* arr = (float*)mappedTex.pData;
-
-			for (int i = 0; i < KernelSize / 2 + 1; ++i)
-			{
-				// First and last are the same, so are second and second to last, and so on
-				// We can store the value once and only go to the middle of the array (which will be an odd number)
-				double value = gaussianFunction(i - (KernelSize / 2));
-				kernel[i] = value;
-				kernel[(KernelSize - 1 - i)] = value;
-				sum += (value * ((i < KernelSize / 2) ? 2.0 : 1.0));
-			}
-
-			// And populate the array
-			for (int i = 0; i < KernelSize; ++i)
-			{
-				int colStart = i * 4;
-				arr[i] = kernel[i] / sum;
-			}
-
-			KernelSizeVar->SetInt(KernelSize);
-			KernelVar->SetResource(KernelRV);
-			KernelArray->Unmap(D3D10CalcSubresource(0, 0, 1));
-
-			// Set the viewport dimensions
-			ViewportWidthVar->SetFloat(static_cast<float>(BackBufferWidth));
-			ViewportHeightVar->SetFloat(static_cast<float>(BackBufferHeight));
-			delete[] kernel;
+			PrepareGaussianKernel(BlurLevel);
 		}
 		break;
 
@@ -559,6 +587,7 @@ void SelectPostProcess( PostProcesses filter )
 		break;
 		case DepthOfField:
 		{
+			PrepareGaussianKernel(15);
 			FocalDistanceVar->SetFloat(FocalDistance);
 			FocalRangeVar->SetFloat(FocalRange);
 		}
@@ -769,6 +798,30 @@ void RenderScene()
 	// Repeat the following process for each Post-Process effect in the array
 	for (int i = 0, size = FullScreenFilters.size(); i < size; ++i)
 	{
+
+		if (FullScreenFilters[i] == DepthOfField || FullScreenFilters[i] == Bloom)
+		{
+			// Perform a prepass here, where we do a Gaussian blur
+			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
+			// Render to an intermediate texture, since we don't want to mess up the double-buffering order
+			g_pd3dDevice->OMSetRenderTargets(1, &IntermediateBlurRenderTarget, NULL);
+			g_pd3dDevice->IASetInputLayout(NULL);
+			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+			PPTechniques[GaussianBlur]->GetPassByName("Horizontal")->Apply(0);
+			g_pd3dDevice->Draw(4, 0);
+
+			// Do the second pass 
+			PostProcessMapVar->SetResource(IntermediateBlurShaderResource);
+			g_pd3dDevice->OMSetRenderTargets(1, &BlurredRenderTarget, NULL);
+			g_pd3dDevice->IASetInputLayout(NULL);
+			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+			PPTechniques[GaussianBlur]->GetPassByName("Vertical")->Apply(0);
+			g_pd3dDevice->Draw(4, 0);
+
+			// After drawing, store the blurred map
+			BlurredMapVar->SetResource(BlurredResource);
+		}
+
 		// Do not clear the depth buffer, since we're reading from there
 		//g_pd3dDevice->ClearDepthStencilView(DepthStencilView, D3D10_CLEAR_DEPTH, 1.0f, 0);
 		PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
@@ -803,7 +856,7 @@ void RenderScene()
 			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], NULL);
 			g_pd3dDevice->IASetInputLayout(NULL);
 			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-			PPTechniques[GaussianBlur]->GetPassByIndex(1)->Apply(0);
+			PPTechniques[GaussianBlur]->GetPassByName("Vertical")->Apply(0);
 			g_pd3dDevice->Draw(4, 0);
 		}
 	}

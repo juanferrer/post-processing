@@ -37,9 +37,10 @@ float NearClip;
 float FarClip;
 
 // Texture maps
-Texture2D SceneTexture;   // Texture containing the scene to copy to the full screen quad
-Texture2D PostProcessMap; // Second map for special purpose textures used during post-processing
-Texture2D DepthMap;   // Depth buffer, used for depth of field calculations
+Texture2D SceneTexture;     // Texture containing the scene to copy to the full screen quad
+Texture2D PostProcessMap;   // Second map for special purpose textures used during post-processing
+Texture2D DepthMap;         // Depth buffer, used for depth of field calculations
+Texture2D BlurredMap;       // Map where the gaussian blur for bloom and depth of field is sent to
 
 // Samplers to use with the above texture maps. Specifies texture filtering and addressing mode to use when accessing texture pixels
 // Usually use point sampling for the scene texture (i.e. no bilinear/trilinear blending) since don't want to blur it in the copy process
@@ -427,21 +428,6 @@ float4 PPRetroShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 
 float4 PPBloomShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
-    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
-
-    // https://catlikecoding.com/unity/tutorials/advanced-rendering/bloom/
-    // https://github.com/Microsoft/DirectXTK/wiki/Writing-custom-shaders
-
-    return float4(ppColour, 1.0f);
-}
-
-float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
-{
-    // Get pixel depth
-    float pixelDepth = DepthMap.Sample(PointClamp, ppIn.UVScene).r;
-
-    float distanceFromFocus = saturate(abs(pixelDepth - FocalDistance) / FocalRange);
-
     // Get the unblurred pixel colour
     float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
 
@@ -466,6 +452,52 @@ float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     }
 
     blurColour /= BoxBlurSize * BoxBlurSize;
+
+    // Now, depending on the luminosity, return a lerp between the colour and the blurred version
+
+    // https://catlikecoding.com/unity/tutorials/advanced-rendering/bloom/
+    // https://github.com/Microsoft/DirectXTK/wiki/Writing-custom-shaders
+
+    float pixelLuma = blurColour.r * 0.2126 + blurColour.g * 0.7152 + blurColour.b * 0.0722;
+
+    // DEBUG
+    //ppColour = float3(0, 0, 0);
+
+    return float4(lerp(ppColour, blurColour, pixelLuma), 1.0f);
+}
+
+float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+    // Get pixel depth
+    float pixelDepth = DepthMap.Sample(PointClamp, ppIn.UVScene).r;
+
+    float distanceFromFocus = saturate(abs(pixelDepth - FocalDistance) / FocalRange);
+
+    // Get the unblurred pixel colour
+    float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
+
+    // Get the blurred pixel colour (use box blur for that)
+    // If only a single blur could be active at a time, it should
+    // get this from a precalculated texture using Gaussian blur
+    /*float3 blurColour = float3(0, 0, 0);
+    float x, y;
+
+    float BoxBlurSize = 20;
+
+    for (uint i = 0; i < BoxBlurSize; ++i)
+    {
+        // Add 1 pixel compensation
+        x = ppIn.UVScene.x + ((i - BoxBlurSize / 2) / ViewportWidth) + (1 / ViewportWidth);
+        for (uint j = 0; j < BoxBlurSize; ++j)
+        {
+            // Add 1 pixel compensation
+            y = ppIn.UVScene.y + ((j - BoxBlurSize / 2) / ViewportHeight) + (1 / ViewportHeight);
+            blurColour += PostProcessMap.Sample(PointClamp, float2(x, y)).rgb;
+        }
+    }
+
+    blurColour /= BoxBlurSize * BoxBlurSize;*/
+    float3 blurColour = BlurredMap.Sample(PointClamp, ppIn.UVScene).rgb;
 
     // DEBUG
     //blurColour = float3(0, 0, 0);
@@ -752,6 +784,26 @@ technique10 PPDepthOfField
         SetVertexShader(CompileShader(vs_4_0, PPQuad()));
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPDOFShader()));
+
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
+    pass Horizontal
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPGaussianBlurHorizontalShader()));
+
+        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
+    pass Vertical
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPGaussianBlurVerticalShader()));
 
         SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);
