@@ -132,13 +132,19 @@ ID3D10EffectScalarVariable* NearClipVar = NULL;
 ID3D10EffectScalarVariable* FarClipVar = NULL;
 
 // Other
-ID3D10ShaderResourceView* BlurredResource = NULL;
+ID3D10ShaderResourceView* BlurredShaderResource = NULL;
 ID3D10RenderTargetView* BlurredRenderTarget = NULL;
 ID3D10Texture2D* BlurredTexture = NULL;
 ID3D10EffectShaderResourceVariable* BlurredMapVar = NULL;
+
 ID3D10Texture2D* IntermediateBlurTexture = NULL;
 ID3D10ShaderResourceView* IntermediateBlurShaderResource = NULL;
 ID3D10RenderTargetView* IntermediateBlurRenderTarget = NULL;
+
+ID3D10ShaderResourceView* BrightShaderResource = NULL;
+ID3D10RenderTargetView* BrightRenderTarget = NULL;
+ID3D10Texture2D* BrightTexture = NULL;
+ID3D10EffectShaderResourceVariable* BrightMapVar = NULL;
 
 extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of the viewport needed to help access the scene texture (see poly post-processing shaders)
 extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
@@ -201,7 +207,7 @@ CEntityManager EntityManager;
 CParseLevel LevelParser( &EntityManager );
 
 // Other scene elements
-const int NumLights = 2;
+const int NumLights = 3;
 CLight*  Lights[NumLights];
 CCamera* MainCamera;
 
@@ -244,6 +250,9 @@ bool SceneSetup()
 
 	// Light orbiting area
 	Lights[1] = new CLight( LightCentre, SColourRGBA(0.0f, 0.2f, 1.0f) * 50, 100.0f );
+
+	// Light next to the wall
+	Lights[2] = new CLight(CVector3(0, 5, 0), SColourRGBA(0.0f, 0.3f, 0.0f) * 100);
 
 	return true;
 }
@@ -309,6 +318,7 @@ bool PostProcessSetup()
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&arrayDesc, NULL, &KernelArray))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &BlurredTexture))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &IntermediateBlurTexture))) return false;	
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &BrightTexture))) return false;
 
 	// Get a "view" of the texture as a render target - giving us an interface for rendering to the texture
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView( SceneTexture, NULL, &SceneRenderTarget ))) return false;
@@ -316,6 +326,7 @@ bool PostProcessSetup()
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTextures[1], NULL, &PostProcessingRenderTargets[1]))) return false;
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(BlurredTexture, NULL, &BlurredRenderTarget))) return false;
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(IntermediateBlurTexture, NULL, &IntermediateBlurRenderTarget))) return false;
+	if (FAILED(g_pd3dDevice->CreateRenderTargetView(BrightTexture, NULL, &BrightRenderTarget))) return false;
 
 	// And get a shader-resource "view" - giving us an interface for passing the texture to shaders
 	D3D10_SHADER_RESOURCE_VIEW_DESC srDesc;
@@ -340,8 +351,9 @@ bool PostProcessSetup()
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTextures[0], &srDesc, &PostProcessShaderResources[0]))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTextures[1], &srDesc, &PostProcessShaderResources[1]))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(KernelArray, &saDesc, &KernelRV))) return false;
-	if (FAILED(g_pd3dDevice->CreateShaderResourceView(BlurredTexture, &srDesc, &BlurredResource))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(BlurredTexture, &srDesc, &BlurredShaderResource))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(IntermediateBlurTexture, &srDesc, &IntermediateBlurShaderResource))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(BrightTexture, &srDesc, &BrightShaderResource))) return false;
 	
 	// Load post-processing support textures
 	if (FAILED( D3DX10CreateShaderResourceViewFromFile( g_pd3dDevice, (MediaFolder + "Noise.png").c_str() ,   NULL, NULL, &NoiseMap,   NULL ) )) return false;
@@ -392,6 +404,7 @@ bool PostProcessSetup()
 	NearClipVar				= PPEffect->GetVariableByName( "NearClip" )->AsScalar();
 	FarClipVar				= PPEffect->GetVariableByName( "FarClip" )->AsScalar();
 	BlurredMapVar			= PPEffect->GetVariableByName( "BlurredMap" )->AsShaderResource();
+	BrightMapVar			= PPEffect->GetVariableByName( "BrightMap" )->AsShaderResource();
 	ViewportWidthVar		= PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
 	ViewportHeightVar		= PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
 
@@ -415,7 +428,12 @@ void PostProcessShutdown()
 	if (KernelArray) KernelArray->Release();
 	if (BlurredTexture) BlurredTexture->Release();
 	if (BlurredRenderTarget) BlurredRenderTarget->Release();
-	if (BlurredResource) BlurredResource->Release();
+	if (BlurredShaderResource) BlurredShaderResource->Release();
+	if (IntermediateBlurShaderResource) IntermediateBlurShaderResource->Release();
+	if (IntermediateBlurRenderTarget) IntermediateBlurRenderTarget->Release();
+	if (BrightShaderResource) BrightShaderResource->Release();
+	if (BrightRenderTarget) BrightRenderTarget->Release();
+	if (BrightTexture) BrightTexture->Release();
 }
 
 //*****************************************************************************
@@ -582,7 +600,7 @@ void SelectPostProcess( PostProcesses filter )
 		break;
 		case Bloom:
 		{
-			// https://github.com/arkenthera/YumeEngine/blob/master/Engine/Assets/Shaders/HLSL/Bloom.hlsl
+			PrepareGaussianKernel(15);
 		}
 		break;
 		case DepthOfField:
@@ -801,8 +819,24 @@ void RenderScene()
 
 		if (FullScreenFilters[i] == DepthOfField || FullScreenFilters[i] == Bloom)
 		{
-			// Perform a prepass here, where we do a Gaussian blur
-			PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
+			if (FullScreenFilters[i] == Bloom)
+			{
+				// Do a bright filter pass using the last rendered image
+				PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
+				g_pd3dDevice->OMSetRenderTargets(1, &BrightRenderTarget, NULL);
+				g_pd3dDevice->IASetInputLayout(NULL);
+				g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+				PPTechniques[Bloom]->GetPassByName("BrightFilter")->Apply(0);
+				g_pd3dDevice->Draw(4, 0);
+
+				PostProcessMapVar->SetResource(BrightShaderResource);
+			}
+			else if (FullScreenFilters[i] == DepthOfField)
+			{
+				PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
+			}
+
+			// Perform a prepass here, where we do a Gaussian blur		
 			// Render to an intermediate texture, since we don't want to mess up the double-buffering order
 			g_pd3dDevice->OMSetRenderTargets(1, &IntermediateBlurRenderTarget, NULL);
 			g_pd3dDevice->IASetInputLayout(NULL);
@@ -819,7 +853,7 @@ void RenderScene()
 			g_pd3dDevice->Draw(4, 0);
 
 			// After drawing, store the blurred map
-			BlurredMapVar->SetResource(BlurredResource);
+			BlurredMapVar->SetResource(BlurredShaderResource);
 		}
 
 		// Do not clear the depth buffer, since we're reading from there

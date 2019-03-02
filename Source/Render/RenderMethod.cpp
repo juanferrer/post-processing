@@ -44,6 +44,8 @@ ID3D10EffectVectorVariable* Light1PosVar = NULL;
 ID3D10EffectVectorVariable* Light1ColourVar = NULL;
 ID3D10EffectVectorVariable* Light2PosVar = NULL;
 ID3D10EffectVectorVariable* Light2ColourVar = NULL;
+ID3D10EffectVectorVariable* Light3PosVar = NULL;
+ID3D10EffectVectorVariable* Light3ColourVar = NULL;
 ID3D10EffectVectorVariable* AmbientColourVar = NULL;
 
 // Material colour
@@ -223,6 +225,8 @@ bool InitialiseMethods()
 	Light1ColourVar  = Effect->GetVariableByName( "Light1Colour"  )->AsVector();
 	Light2PosVar     = Effect->GetVariableByName( "Light2Pos"     )->AsVector();
 	Light2ColourVar  = Effect->GetVariableByName( "Light2Colour"  )->AsVector();
+	Light3PosVar     = Effect->GetVariableByName( "Light3Pos"     )->AsVector();
+	Light3ColourVar  = Effect->GetVariableByName( "Light3Colour"  )->AsVector();
 	AmbientColourVar = Effect->GetVariableByName( "AmbientColour" )->AsVector();
 
 	// Access material colour shader variables
@@ -287,8 +291,10 @@ void SetLights( CLight** lights )
 {
 	Light1PosVar->   SetRawValue( &lights[0]->GetPosition(), 0, 12 );  // Send 3 floats (12 bytes) from C++ light position variable (x,y,z) to shader counterpart (middle parameter is unused) 
 	Light2PosVar->   SetRawValue( &lights[1]->GetPosition(), 0, 12 );
+	Light3PosVar->   SetRawValue( &lights[2]->GetPosition(), 0, 12 );
 	Light1ColourVar->SetRawValue( &lights[0]->GetColour(), 0, 12 );
 	Light2ColourVar->SetRawValue( &lights[1]->GetColour(), 0, 12 );
+	Light3ColourVar->SetRawValue( &lights[2]->GetColour(), 0, 12 );
 }
 
 // Set the camera to use for all methods
