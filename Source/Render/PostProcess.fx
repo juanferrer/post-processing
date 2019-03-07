@@ -396,7 +396,25 @@ float4 PPGaussianBlurVerticalShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     float2 offset = float2(0, sin(ppIn.UVArea.x * radians(200.0f) + UnderWaterTimer) / 50);
-    float3 ppColour = (float3) PostProcessMap.Sample(PointClamp, ppIn.UVScene + offset) * UnderWaterTintColour;
+    float2 coords = ppIn.UVScene + offset;
+    float3 ppColour = (float3) PostProcessMap.Sample(PointClamp, coords)/* * UnderWaterTintColour*/;
+    float pixelDepth = DepthMap.Sample(PointClamp, coords);
+
+    // Light of different wavelenghts gets absorbed at different rates depending on distance
+    // Red:     5m
+    // Green:   110m
+    // Blue:    275m
+
+    float redAbsorption = 0.5;
+    float greenAbsorption = 1.10;
+    float blueAbsorption = 2.75;
+
+    float d = (1 - pixelDepth);
+
+    ppColour.r *= d * redAbsorption;
+    ppColour.g *= d * greenAbsorption;
+    //ppColour.b *= d * blueAbsorption;
+
     return float4(ppColour, 1.0f);
 }
 
