@@ -130,6 +130,8 @@ ID3D10EffectScalarVariable* FocalDistanceVar = NULL;
 ID3D10EffectScalarVariable* FocalRangeVar = NULL;
 ID3D10EffectScalarVariable* NearClipVar = NULL;
 ID3D10EffectScalarVariable* FarClipVar = NULL;
+ID3D10EffectVectorVariable* MousePosVar = NULL;
+bool UsingMousePos = false;
 
 // Other
 ID3D10ShaderResourceView* BlurredShaderResource = NULL;
@@ -191,8 +193,9 @@ extern TUInt32 BackBufferWidth;
 extern TUInt32 BackBufferHeight;
 
 // Current mouse position
-extern TUInt32 MouseX;
-extern TUInt32 MouseY;
+//extern TUInt32 MouseX;
+//extern TUInt32 MouseY;
+extern CVector2 MousePixel;
 
 // Messenger class for sending messages to and between entities
 extern CMessenger Messenger;
@@ -207,7 +210,7 @@ CEntityManager EntityManager;
 CParseLevel LevelParser( &EntityManager );
 
 // Other scene elements
-const int NumLights = 3;
+const int NumLights = 2;
 CLight*  Lights[NumLights];
 CCamera* MainCamera;
 
@@ -250,9 +253,6 @@ bool SceneSetup()
 
 	// Light orbiting area
 	Lights[1] = new CLight( LightCentre, SColourRGBA(0.0f, 0.2f, 1.0f) * 50, 100.0f );
-
-	// Light next to the wall
-	Lights[2] = new CLight(CVector3(0, 5, 0), SColourRGBA(0.0f, 0.3f, 0.0f) * 100);
 
 	return true;
 }
@@ -403,6 +403,7 @@ bool PostProcessSetup()
 	FocalRangeVar			= PPEffect->GetVariableByName( "FocalRange" )->AsScalar();
 	NearClipVar				= PPEffect->GetVariableByName( "NearClip" )->AsScalar();
 	FarClipVar				= PPEffect->GetVariableByName( "FarClip" )->AsScalar();
+	MousePosVar				= PPEffect->GetVariableByName( "MousePos" )->AsVector();
 	BlurredMapVar			= PPEffect->GetVariableByName( "BlurredMap" )->AsShaderResource();
 	BrightMapVar			= PPEffect->GetVariableByName( "BrightMap" )->AsShaderResource();
 	ViewportWidthVar		= PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
@@ -583,7 +584,7 @@ void SelectPostProcess( PostProcesses filter )
 
 		case UnderWater:
 		{
-			D3DXCOLOR UnderWaterTintColour = D3DXCOLOR(0.0f, 0.0f, 1.0f, 1.0f);
+			D3DXCOLOR UnderWaterTintColour = D3DXCOLOR(0.2f, 0.5f, 1.0f, 1.0f);
 			UnderWaterTintColourVar->SetRawValue(&UnderWaterTintColour, 0, 12);
 			UnderWaterTimerVar->SetFloat(UnderWaterTimer);
 		}
@@ -798,7 +799,7 @@ void RenderScene()
 	g_pd3dDevice->Draw(4, 0);
 
 	// Wall windows shader
-	CEntity* wallWindow = EntityManager.GetEntity("Wall");
+	/*CEntity* wallWindow = EntityManager.GetEntity("Wall");
 	// Need to create a non-camera-facing quad for this
 	CVector3 pos = wallWindow->Position();
 	pos.y = 12.5f;
@@ -808,7 +809,7 @@ void RenderScene()
 	g_pd3dDevice->IASetInputLayout(NULL);
 	g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 	PPTechniques[Negative]->GetPassByIndex(0)->Apply(0);
-	g_pd3dDevice->Draw(4, 0);
+	g_pd3dDevice->Draw(4, 0);*/
 
 	//------------------------------------------------
 	// FULL SCREEN POST PROCESS RENDER PASS - Render full screen quad on the back-buffer mapped with the scene texture, with post-processing
@@ -868,6 +869,15 @@ void RenderScene()
 		DepthMapVar->SetResource(DepthShaderView);
 		NearClipVar->SetFloat(MainCamera->GetNearClip());
 		FarClipVar->SetFloat(MainCamera->GetFarClip());
+		if (UsingMousePos)
+		{
+			if (MousePixel.Length() > 0)
+			{
+				auto mousePos = CVector3(MousePixel.x / BackBufferWidth, MousePixel.y / BackBufferHeight, UsingMousePos ? 1 : 0);
+				MousePosVar->SetRawValue(&mousePos, 0, 12);
+			}
+			UsingMousePos = false;
+		}
 
 
 		// Prepare shader settings for the current full screen filter
@@ -1076,6 +1086,14 @@ void UpdateScene( float updateTime )
 	if (KeyHeld(Key_Numpad1))
 	{
 		if (FocalDistance > FocalStep) FocalDistance -= FocalStep;
+	}
+
+	if (KeyHeld(Mouse_LButton))
+	{
+		// std::find(FullScreenFilters.begin(), FullScreenFilters.end(), DepthOfField) != FullScreenFilters.end())
+
+		// Set the distance to the depth of the pixel under the mouse
+		UsingMousePos = true;
 	}
 
 	// Rotate cube and attach light to it

@@ -31,6 +31,7 @@ float UnderWaterTimer;
 Texture2D<float> Kernel;
 float KernelSize;
 float PixelSize;
+float3 MousePos;
 float FocalDistance;
 float FocalRange;
 float NearClip;
@@ -397,23 +398,18 @@ float4 PPUnderWaterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     float2 offset = float2(0, sin(ppIn.UVArea.x * radians(200.0f) + UnderWaterTimer) / 50);
     float2 coords = ppIn.UVScene + offset;
-    float3 ppColour = (float3) PostProcessMap.Sample(PointClamp, coords)/* * UnderWaterTintColour*/;
-    float pixelDepth = DepthMap.Sample(PointClamp, coords);
+    float3 ppColour = (float3) PostProcessMap.Sample(PointClamp, coords) * UnderWaterTintColour;
+    // Wanted to use depth to affect how much each wavelength travelled, but didn't have time to
+    //float pixelDepth = DepthMap.Sample(PointClamp, coords);
 
     // Light of different wavelenghts gets absorbed at different rates depending on distance
-    // Red:     5m
-    // Green:   110m
-    // Blue:    275m
+    // Red:     15m
+    // Green:   75m
+    // Blue:    300m
+    //float3 colourExtintion = float3(15, 75, 300);
 
-    float redAbsorption = 0.5;
-    float greenAbsorption = 1.10;
-    float blueAbsorption = 2.75;
-
-    float d = (1 - pixelDepth);
-
-    ppColour.r *= d * redAbsorption;
-    ppColour.g *= d * greenAbsorption;
-    //ppColour.b *= d * blueAbsorption;
+    //float3 distance = saturate(pixelDepth / colourExtintion);
+    //ppColour = lerp(ppColour, normalize(colourExtintion), distance);
 
     return float4(ppColour, 1.0f);
 }
@@ -452,7 +448,8 @@ float4 PPBloomShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
 
     // Get the blurred pixel colour
-    float3 blurColour = BlurredMap.Sample(PointClamp, ppIn.UVScene).rgb;
+    // Multiply it so that it is obvious
+    float3 blurColour = BlurredMap.Sample(PointClamp, ppIn.UVScene).rgb * 5;
 
     // DEBUG
     //ppColour = float3(0, 0, 0);
@@ -478,13 +475,18 @@ float4 PPBrightFilterShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     return float4(ppColour, 1.0f);
 }
 
-// Post-processing shader that 
+// Post-processing shader that applies a depth of field
 float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     // Get pixel depth
     float pixelDepth = DepthMap.Sample(PointClamp, ppIn.UVScene).r;
+    float focalDistance = FocalDistance;
+    if (MousePos.z >= 0.5)
+    {
+        focalDistance = DepthMap.Sample(PointClamp, MousePos.xy).r;
+    }
 
-    float distanceFromFocus = saturate(abs(pixelDepth - FocalDistance) / FocalRange);
+    float distanceFromFocus = saturate(abs(pixelDepth - focalDistance) / FocalRange);
 
     // Get the unblurred pixel colour
     float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
@@ -492,8 +494,7 @@ float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     // Get the blurred pixel colour
     float3 blurColour = BlurredMap.Sample(PointClamp, ppIn.UVScene).rgb;
 
-    // DEBUG
-    //blurColour = float3(0, 0, 0);
+    // Probably should give a few "grace pixels" around objects closer to the camera
 
     // Return a lerp of the colour depending on distance to the focus
     return float4(lerp(ppColour, blurColour, distanceFromFocus), 1.0f);

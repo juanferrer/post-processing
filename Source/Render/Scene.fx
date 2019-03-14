@@ -23,10 +23,8 @@ float3 CameraPos;
 // Light data
 float3 Light1Pos;
 float3 Light2Pos;
-float3 Light3Pos;
 float3 Light1Colour;
 float3 Light2Colour;
-float3 Light3Colour;
 float3 AmbientColour;
 
 // Material colour data
@@ -298,16 +296,9 @@ float4 PSPixelLit( VS_LIGHTING_OUTPUT vOut ) : SV_Target
 	halfway = normalize(light2Dir + cameraDir);
 	float3 specularLight2 = diffuseLight2 * pow( max( dot(worldNormal.xyz, halfway), 0 ), SpecularPower );
 
-    //// LIGHT 3
-    float3 light3Dir = normalize(Light3Pos - vOut.WorldPos.xyz);
-    float3 light3Dist = length(Light3Pos - vOut.WorldPos.xyz);
-    float3 diffuseLight3 = Light3Colour * max(dot(worldNormal.xyz, light3Dir), 0) / light3Dist;
-    halfway = normalize(light3Dir + cameraDir);
-    float3 specularLight3 = diffuseLight3 * pow(max(dot(worldNormal.xyz, halfway), 0), SpecularPower);
-
 	// Sum the effect of the two lights - add the ambient at this stage rather than for each light (or we will get twice the ambient level)
-	float3 diffuseLight = AmbientColour + diffuseLight1 + diffuseLight2 + diffuseLight3;
-	float3 specularLight = specularLight1 + specularLight2 + specularLight3;
+	float3 diffuseLight = AmbientColour + diffuseLight1 + diffuseLight2;
+	float3 specularLight = specularLight1 + specularLight2;
 
 
 	////////////////////
