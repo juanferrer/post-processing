@@ -1053,7 +1053,7 @@ void UpdateScene( float updateTime )
 	}
 	if (KeyHit(Key_8))
 	{
-		FullScreenFilters.push_back(Vignette);
+		//FullScreenFilters.push_back(Vignette);
 	}
 
 	if (KeyHeld(Key_Numpad8))

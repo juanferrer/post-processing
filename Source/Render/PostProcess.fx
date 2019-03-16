@@ -36,6 +36,7 @@ float FocalDistance;
 float FocalRange;
 float NearClip;
 float FarClip;
+float VignetteSize = 0.0001;
 
 // Texture maps
 Texture2D SceneTexture;     // Texture containing the scene to copy to the full screen quad
@@ -503,8 +504,11 @@ float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 float4 PPVignetteShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
+    float distanceToLeftRight = min(ppIn.UVScene.x, abs(ppIn.UVScene.x - 1));
+    float distanceToTopBottom = min(ppIn.UVScene.y, abs(ppIn.UVScene.y - 1));
+    float distanceToEdge = min(distanceToLeftRight, distanceToTopBottom);
 
-    return float4(ppColour, 0.5);
+    return float4(lerp(float3(0, 0, 0), ppColour, distanceToEdge), 0.5);
 }
 
 
