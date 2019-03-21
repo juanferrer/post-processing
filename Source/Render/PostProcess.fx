@@ -43,6 +43,7 @@ Texture2D SceneTexture;     // Texture containing the scene to copy to the full 
 Texture2D PostProcessMap;   // Second map for special purpose textures used during post-processing
 Texture2D DepthMap;         // Depth buffer, used for depth of field calculations
 Texture2D BlurredMap;       // Map where the gaussian blur for bloom and depth of field is sent to
+Texture2D LastFrameMap;     // Map where last frame is stored
 Texture2D BrightTexture;    // PostProcessMap through a bright pass filter
 
 // Samplers to use with the above texture maps. Specifies texture filtering and addressing mode to use when accessing texture pixels
@@ -102,6 +103,12 @@ struct PS_POSTPROCESS_INPUT
 	float2 UVArea  : TEXCOORD1;
 };
 
+struct PS_POSTPROCESS_OUTPUT
+{
+    float4 Target1 : SV_Target0;
+    float4 Target2 : SV_Target1;
+};
+
 
 
 //--------------------------------------------------------------------------------------
@@ -143,10 +150,15 @@ PS_POSTPROCESS_INPUT PPQuad(VS_POSTPROCESS_INPUT vIn)
 //--------------------------------------------------------------------------------------
 
 // Post-processing shader that simply outputs the scene texture, i.e. no post-processing. A waste of processing, but illustrative
-float4 PPCopyShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
+PS_POSTPROCESS_OUTPUT PPCopyShader( PS_POSTPROCESS_INPUT ppIn ) : SV_Target
 {
+    PS_POSTPROCESS_OUTPUT ppOut;
 	float3 ppColour = PostProcessMap.Sample( PointClamp, ppIn.UVScene ).rgb;
-	return float4( ppColour, 1.0f );
+
+    ppOut.Target1 = float4(ppColour, 1.0f);
+    ppOut.Target2 = float4(ppColour, 1.0f);
+
+    return ppOut;
 }
 
 
@@ -501,6 +513,13 @@ float4 PPDOFShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
     return float4(lerp(ppColour, blurColour, distanceFromFocus), 1.0f);
 }
 
+float4 PPMotionBlurShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
+{
+    float3 ppColour = LastFrameMap.Sample(PointClamp, ppIn.UVScene);
+
+    return float4(ppColour, 0.8f);
+}
+
 float4 PPVignetteShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 {
     float3 ppColour = PostProcessMap.Sample(PointClamp, ppIn.UVScene).rgb;
@@ -565,7 +584,7 @@ technique10 PPCopy
         SetGeometryShader( NULL );                                   
         SetPixelShader( CompileShader( ps_4_0, PPCopyShader() ) );
 
-		SetBlendState( NoBlending, float4( 0.0f, 0.0f, 0.0f, 0.0f ), 0xFFFFFFFF );
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState( CullBack ); 
 		SetDepthStencilState( DepthWritesOff, 0 );
      }
@@ -581,7 +600,7 @@ technique10 PPTint
         SetGeometryShader( NULL );                                   
         SetPixelShader( CompileShader( ps_4_0, PPTintShader() ) );
 
-		SetBlendState( NoBlending, float4( 0.0f, 0.0f, 0.0f, 0.0f ), 0xFFFFFFFF );
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState( CullBack ); 
 		SetDepthStencilState( DepthWritesOff, 0 );
     }
@@ -596,7 +615,7 @@ technique10 PPGradient
 		SetGeometryShader(NULL);
 		SetPixelShader(CompileShader(ps_4_0, PPGradientShader()));
 
-        SetBlendState( NoBlending, float4( 0.0f, 0.0f, 0.0f, 0.0f ), 0xFFFFFFFF );
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState( CullBack );
 		SetDepthStencilState( DepthWritesOff, 0 );
 	}
@@ -686,7 +705,7 @@ technique10 PPBoxBlur
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPBoxBlurShader()));
 
-        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);
         SetDepthStencilState(DepthWritesOff, 0);
     }
@@ -701,7 +720,7 @@ technique10 PPGaussianBlur
 		SetGeometryShader(NULL);
 		SetPixelShader(CompileShader(ps_4_0, PPGaussianBlurHorizontalShader()));
 
-		SetBlendState( NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
 	}
@@ -711,7 +730,7 @@ technique10 PPGaussianBlur
 		SetGeometryShader(NULL);
 		SetPixelShader(CompileShader(ps_4_0, PPGaussianBlurVerticalShader()));
 
-        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
 		SetRasterizerState(CullBack);
 		SetDepthStencilState(DepthWritesOff, 0);
 	}
@@ -741,7 +760,7 @@ technique10 PPNegative
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPNegativeShader()));
 
-        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);
         SetDepthStencilState(DepthWritesOff, 0);
     }
@@ -755,7 +774,7 @@ technique10 PPRetro
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPRetroShader()));
 
-        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);
         SetDepthStencilState(DepthWritesOff, 0);
     }
@@ -769,7 +788,7 @@ technique10 PPBloom
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPBloomShader()));
 
-        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);
         SetDepthStencilState(DepthWritesOff, 0);
     }
@@ -779,7 +798,7 @@ technique10 PPBloom
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPBrightFilterShader()));
 
-        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);
         SetDepthStencilState(DepthWritesOff, 0);
     }
@@ -793,7 +812,21 @@ technique10 PPDepthOfField
         SetGeometryShader(NULL);
         SetPixelShader(CompileShader(ps_4_0, PPDOFShader()));
 
-        SetBlendState(NoBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
+        SetRasterizerState(CullBack);
+        SetDepthStencilState(DepthWritesOff, 0);
+    }
+}
+
+technique10 PPMotionBlur
+{
+    pass P0
+    {
+        SetVertexShader(CompileShader(vs_4_0, PPQuad()));
+        SetGeometryShader(NULL);
+        SetPixelShader(CompileShader(ps_4_0, PPMotionBlurShader()));
+
+        SetBlendState(AlphaBlending, float4(0.0f, 0.0f, 0.0f, 0.0f), 0xFFFFFFFF);
         SetRasterizerState(CullBack);
         SetDepthStencilState(DepthWritesOff, 0);
     }

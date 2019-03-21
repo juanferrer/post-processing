@@ -48,6 +48,7 @@ enum PostProcesses
 	Retro,
 	Bloom,
 	DepthOfField,
+	MotionBlur,
 	Vignette,
 	NumPostProcesses,
 };
@@ -78,7 +79,7 @@ ID3D10Effect* PPEffect;
 
 // Technique name for each post-process
 const string PPTechniqueNames[NumPostProcesses] = {	"PPCopy", "PPTint", "PPGradient", "PPGreyNoise", "PPBurn", "PPDistort",
-"PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative", "PPRetro", "PPBloom", "PPDepthOfField",
+"PPSpiral", "PPHeatHaze", "PPBoxBlur", "PPGaussianBlur", "PPUnderWater", "PPNegative", "PPRetro", "PPBloom", "PPDepthOfField", "PPMotionBlur",
 "PPVignette"};
 
 // Technique pointers for each post-process
@@ -139,14 +140,19 @@ ID3D10RenderTargetView* BlurredRenderTarget = NULL;
 ID3D10Texture2D* BlurredTexture = NULL;
 ID3D10EffectShaderResourceVariable* BlurredMapVar = NULL;
 
-ID3D10Texture2D* IntermediateBlurTexture = NULL;
-ID3D10ShaderResourceView* IntermediateBlurShaderResource = NULL;
-ID3D10RenderTargetView* IntermediateBlurRenderTarget = NULL;
+ID3D10Texture2D* IntermediateTexture = NULL;
+ID3D10ShaderResourceView* IntermediateShaderResource = NULL;
+ID3D10RenderTargetView* IntermediateRenderTarget = NULL;
 
 ID3D10ShaderResourceView* BrightShaderResource = NULL;
 ID3D10RenderTargetView* BrightRenderTarget = NULL;
 ID3D10Texture2D* BrightTexture = NULL;
 ID3D10EffectShaderResourceVariable* BrightMapVar = NULL;
+
+ID3D10ShaderResourceView* LastFrameShaderResource = NULL;
+ID3D10RenderTargetView* LastFrameRenderTarget = NULL;
+ID3D10Texture2D* LastFrameTexture = NULL;
+ID3D10EffectShaderResourceVariable* LastFrameMapVar = NULL;
 
 extern ID3D10EffectScalarVariable* ViewportWidthVar;// = NULL; // Dimensions of the viewport needed to help access the scene texture (see poly post-processing shaders)
 extern ID3D10EffectScalarVariable* ViewportHeightVar;// = NULL;
@@ -317,16 +323,18 @@ bool PostProcessSetup()
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &PostProcessTextures[1]))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&arrayDesc, NULL, &KernelArray))) return false;
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &BlurredTexture))) return false;
-	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &IntermediateBlurTexture))) return false;	
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &IntermediateTexture))) return false;	
 	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &BrightTexture))) return false;
+	if (FAILED(g_pd3dDevice->CreateTexture2D(&textureDesc, NULL, &LastFrameTexture))) return false;
 
 	// Get a "view" of the texture as a render target - giving us an interface for rendering to the texture
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView( SceneTexture, NULL, &SceneRenderTarget ))) return false;
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTextures[0], NULL, &PostProcessingRenderTargets[0]))) return false;
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(PostProcessTextures[1], NULL, &PostProcessingRenderTargets[1]))) return false;
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(BlurredTexture, NULL, &BlurredRenderTarget))) return false;
-	if (FAILED(g_pd3dDevice->CreateRenderTargetView(IntermediateBlurTexture, NULL, &IntermediateBlurRenderTarget))) return false;
+	if (FAILED(g_pd3dDevice->CreateRenderTargetView(IntermediateTexture, NULL, &IntermediateRenderTarget))) return false;
 	if (FAILED(g_pd3dDevice->CreateRenderTargetView(BrightTexture, NULL, &BrightRenderTarget))) return false;
+	if (FAILED(g_pd3dDevice->CreateRenderTargetView(LastFrameTexture, NULL, &LastFrameRenderTarget))) return false;
 
 	// And get a shader-resource "view" - giving us an interface for passing the texture to shaders
 	D3D10_SHADER_RESOURCE_VIEW_DESC srDesc;
@@ -352,8 +360,9 @@ bool PostProcessSetup()
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(PostProcessTextures[1], &srDesc, &PostProcessShaderResources[1]))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(KernelArray, &saDesc, &KernelRV))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(BlurredTexture, &srDesc, &BlurredShaderResource))) return false;
-	if (FAILED(g_pd3dDevice->CreateShaderResourceView(IntermediateBlurTexture, &srDesc, &IntermediateBlurShaderResource))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(IntermediateTexture, &srDesc, &IntermediateShaderResource))) return false;
 	if (FAILED(g_pd3dDevice->CreateShaderResourceView(BrightTexture, &srDesc, &BrightShaderResource))) return false;
+	if (FAILED(g_pd3dDevice->CreateShaderResourceView(LastFrameTexture, &srDesc, &LastFrameShaderResource))) return false;
 	
 	// Load post-processing support textures
 	if (FAILED( D3DX10CreateShaderResourceViewFromFile( g_pd3dDevice, (MediaFolder + "Noise.png").c_str() ,   NULL, NULL, &NoiseMap,   NULL ) )) return false;
@@ -405,6 +414,7 @@ bool PostProcessSetup()
 	FarClipVar				= PPEffect->GetVariableByName( "FarClip" )->AsScalar();
 	MousePosVar				= PPEffect->GetVariableByName( "MousePos" )->AsVector();
 	BlurredMapVar			= PPEffect->GetVariableByName( "BlurredMap" )->AsShaderResource();
+	LastFrameMapVar			= PPEffect->GetVariableByName( "LastFrameMap" )->AsShaderResource();
 	BrightMapVar			= PPEffect->GetVariableByName( "BrightMap" )->AsShaderResource();
 	ViewportWidthVar		= PPEffect->GetVariableByName( "ViewportWidth" )->AsScalar();
 	ViewportHeightVar		= PPEffect->GetVariableByName( "ViewportHeight" )->AsScalar();
@@ -430,11 +440,14 @@ void PostProcessShutdown()
 	if (BlurredTexture) BlurredTexture->Release();
 	if (BlurredRenderTarget) BlurredRenderTarget->Release();
 	if (BlurredShaderResource) BlurredShaderResource->Release();
-	if (IntermediateBlurShaderResource) IntermediateBlurShaderResource->Release();
-	if (IntermediateBlurRenderTarget) IntermediateBlurRenderTarget->Release();
+	if (IntermediateShaderResource) IntermediateShaderResource->Release();
+	if (IntermediateRenderTarget) IntermediateRenderTarget->Release();
 	if (BrightShaderResource) BrightShaderResource->Release();
 	if (BrightRenderTarget) BrightRenderTarget->Release();
 	if (BrightTexture) BrightTexture->Release();
+	if (LastFrameShaderResource) LastFrameShaderResource->Release();
+	if (LastFrameRenderTarget) LastFrameRenderTarget->Release();
+	if (LastFrameTexture) LastFrameTexture->Release();
 }
 
 //*****************************************************************************
@@ -818,6 +831,16 @@ void RenderScene()
 	for (int i = 0, size = FullScreenFilters.size(); i < size; ++i)
 	{
 
+		if (FullScreenFilters[i] == MotionBlur)
+		{
+			LastFrameMapVar->SetResource(LastFrameShaderResource);
+			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], NULL);
+			g_pd3dDevice->IASetInputLayout(NULL);
+			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+			PPTechniques[FullScreenFilters[i]]->GetPassByIndex(0)->Apply(0);
+			g_pd3dDevice->Draw(4, 0);
+			continue;
+		}
 		if (FullScreenFilters[i] == DepthOfField || FullScreenFilters[i] == Bloom)
 		{
 			if (FullScreenFilters[i] == Bloom)
@@ -839,14 +862,14 @@ void RenderScene()
 
 			// Perform a prepass here, where we do a Gaussian blur		
 			// Render to an intermediate texture, since we don't want to mess up the double-buffering order
-			g_pd3dDevice->OMSetRenderTargets(1, &IntermediateBlurRenderTarget, NULL);
+			g_pd3dDevice->OMSetRenderTargets(1, &IntermediateRenderTarget, NULL);
 			g_pd3dDevice->IASetInputLayout(NULL);
 			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
 			PPTechniques[GaussianBlur]->GetPassByName("Horizontal")->Apply(0);
 			g_pd3dDevice->Draw(4, 0);
 
 			// Do the second pass 
-			PostProcessMapVar->SetResource(IntermediateBlurShaderResource);
+			PostProcessMapVar->SetResource(IntermediateShaderResource);
 			g_pd3dDevice->OMSetRenderTargets(1, &BlurredRenderTarget, NULL);
 			g_pd3dDevice->IASetInputLayout(NULL);
 			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
@@ -915,6 +938,14 @@ void RenderScene()
 	PPTechniques[Copy]->GetPassByIndex(0)->Apply(0);
 	g_pd3dDevice->Draw(4, 0);
 
+	g_pd3dDevice->OMSetRenderTargets(1, &LastFrameRenderTarget, NULL);
+	PostProcessMapVar->SetResource(PostProcessShaderResources[PostProcessIndex]);
+	SelectPostProcess(Copy);
+	SetFullScreenPostProcessArea();
+	g_pd3dDevice->IASetInputLayout(NULL);
+	g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+	PPTechniques[Copy]->GetPassByIndex(0)->Apply(0);
+	g_pd3dDevice->Draw(4, 0);
 	//------------------------------------------------
 
 	// These two lines unbind the scene texture from the shader to stop DirectX issuing a warning when we try to render to it again next frame
@@ -922,7 +953,7 @@ void RenderScene()
 	PPTechniques[FullScreenFilters[0]]->GetPassByIndex(0)->Apply(0);
 
 	// Render UI elements last - don't want them post-processed
-	RenderSceneText();
+	//RenderSceneText();
 
 	// Present the backbuffer contents to the display
 	SwapChain->Present( 0, 0 );
@@ -1053,7 +1084,7 @@ void UpdateScene( float updateTime )
 	}
 	if (KeyHit(Key_8))
 	{
-		//FullScreenFilters.push_back(Vignette);
+		FullScreenFilters.push_back(MotionBlur);
 	}
 
 	if (KeyHeld(Key_Numpad8))
