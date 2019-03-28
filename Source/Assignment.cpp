@@ -72,6 +72,9 @@ int KernelSize;
 float FocalRange = 0.01;
 float FocalDistance = 0.9645;
 float FocalStep = 0.0001;
+float PixelSize = 0.007; // Bond. James Bond.
+int NumberOfColours = 16;
+bool IsCameraMoving = false;
 
 
 // Separate effect file for full screen & area post-processes. Not necessary to use a separate file, but convenient given the architecture of this lab
@@ -125,6 +128,7 @@ ID3D10ShaderResourceView* KernelRV = NULL;
 ID3D10Texture2D* KernelArray = NULL;
 ID3D10EffectScalarVariable* KernelSizeVar = NULL;
 ID3D10EffectScalarVariable* PixelSizeVar = NULL;
+ID3D10EffectScalarVariable* NumberOfColoursVar = NULL;
 
 // Depth of field
 ID3D10EffectScalarVariable* FocalDistanceVar = NULL;
@@ -408,6 +412,7 @@ bool PostProcessSetup()
 	KernelVar				= PPEffect->GetVariableByName( "Kernel" )->AsShaderResource();
 	KernelSizeVar			= PPEffect->GetVariableByName( "KernelSize" )->AsScalar();
 	PixelSizeVar			= PPEffect->GetVariableByName( "PixelSize" )->AsScalar();
+	NumberOfColoursVar		= PPEffect->GetVariableByName( "NumberOfColours" )->AsScalar();
 	FocalDistanceVar		= PPEffect->GetVariableByName( "FocalDistance" )->AsScalar();
 	FocalRangeVar			= PPEffect->GetVariableByName( "FocalRange" )->AsScalar();
 	NearClipVar				= PPEffect->GetVariableByName( "NearClip" )->AsScalar();
@@ -608,8 +613,8 @@ void SelectPostProcess( PostProcesses filter )
 		}
 		case Retro:
 		{
-			float pixelSize = 0.007; // Bond. James Bond.
-			PixelSizeVar->SetFloat(pixelSize);
+			PixelSizeVar->SetFloat(PixelSize);
+			NumberOfColoursVar->SetInt(NumberOfColours);
 		}
 		break;
 		case Bloom:
@@ -833,12 +838,15 @@ void RenderScene()
 
 		if (FullScreenFilters[i] == MotionBlur)
 		{
-			LastFrameMapVar->SetResource(LastFrameShaderResource);
-			g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], NULL);
-			g_pd3dDevice->IASetInputLayout(NULL);
-			g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-			PPTechniques[FullScreenFilters[i]]->GetPassByIndex(0)->Apply(0);
-			g_pd3dDevice->Draw(4, 0);
+			if (IsCameraMoving)
+			{
+				LastFrameMapVar->SetResource(LastFrameShaderResource);
+				g_pd3dDevice->OMSetRenderTargets(1, &PostProcessingRenderTargets[PostProcessIndex], NULL);
+				g_pd3dDevice->IASetInputLayout(NULL);
+				g_pd3dDevice->IASetPrimitiveTopology(D3D10_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+				PPTechniques[FullScreenFilters[i]]->GetPassByIndex(0)->Apply(0);
+				g_pd3dDevice->Draw(4, 0);
+			}
 			continue;
 		}
 		if (FullScreenFilters[i] == DepthOfField || FullScreenFilters[i] == Bloom)
@@ -1031,6 +1039,9 @@ void RenderSceneText()
 // Update the scene between rendering
 void UpdateScene( float updateTime )
 {
+	// Reset bool
+	IsCameraMoving = false;
+
 	// Call all entity update functions
 	EntityManager.UpdateAllEntities( updateTime );
 
@@ -1117,6 +1128,24 @@ void UpdateScene( float updateTime )
 	if (KeyHeld(Key_Numpad1))
 	{
 		if (FocalDistance > FocalStep) FocalDistance -= FocalStep;
+	}
+
+	if (KeyHeld(Key_Add))
+	{
+		if (PixelSize < 1) PixelSize += 0.0001;
+	}
+	if (KeyHeld(Key_Subtract))
+	{
+		if (PixelSize > 0) PixelSize -= 0.0001;
+	}
+
+	if (KeyHit(Key_Prior))
+	{
+		if (NumberOfColours < 256) NumberOfColours++;
+	}
+	if (KeyHit(Key_Next))
+	{
+		if (NumberOfColours > 1) NumberOfColours--;
 	}
 
 	if (KeyHeld(Mouse_LButton))

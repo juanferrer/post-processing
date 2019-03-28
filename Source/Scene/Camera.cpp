@@ -30,6 +30,8 @@ CCamera::CCamera( const CVector3& position /*= CVector3::kOrigin*/,
 	CalculateMatrices();
 }
 
+extern bool IsCameraMoving;
+
 
 //-----------------------------------------------------------------------------
 // Camera matrix functions
@@ -67,38 +69,46 @@ void CCamera::Control( EKeyCode turnUp, EKeyCode turnDown,
 	if (KeyHeld( turnDown ))
 	{
 		m_Matrix.RotateLocalX( RotSpeed );
+		IsCameraMoving = true;
 	}
 	if (KeyHeld( turnUp ))
 	{
 		m_Matrix.RotateLocalX( -RotSpeed );
+		IsCameraMoving = true;
 	}
 	if (KeyHeld( turnRight ))
 	{
 		m_Matrix.RotateY( RotSpeed );
+		IsCameraMoving = true;
 	}
 	if (KeyHeld( turnLeft ))
 	{
 		m_Matrix.RotateY( -RotSpeed );
+		IsCameraMoving = true;
 	}
 
 	// Local X movement - move in the direction of the X axis, taken from view matrix
 	if (KeyHeld( moveRight )) 
 	{
 		m_Matrix.MoveLocalX( MoveSpeed );
+		IsCameraMoving = true;
 	}
 	if (KeyHeld( moveLeft ))
 	{
 		m_Matrix.MoveLocalX( -MoveSpeed );
+		IsCameraMoving = true;
 	}
 
 	// Local Z movement - move in the direction of the Z axis, taken from view matrix
 	if (KeyHeld( moveForward ))
 	{
 		m_Matrix.MoveLocalZ( MoveSpeed );
+		IsCameraMoving = true;
 	}
 	if (KeyHeld( moveBackward ))
 	{
 		m_Matrix.MoveLocalZ( -MoveSpeed );
+		IsCameraMoving = true;
 	}
 }
 

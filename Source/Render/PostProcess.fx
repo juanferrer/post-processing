@@ -31,6 +31,7 @@ float UnderWaterTimer;
 Texture2D<float> Kernel;
 float KernelSize;
 float PixelSize;
+float NumberOfColours;
 float3 MousePos;
 float FocalDistance;
 float FocalRange;
@@ -446,10 +447,8 @@ float4 PPRetroShader(PS_POSTPROCESS_INPUT ppIn) : SV_Target
 
     float3 ppColour = PostProcessMap.Sample(PointClamp, pixelatedUV).rgb;
 
-    uint numberOfColours = 16;
-
     // Force the color into one of the available ones
-    ppColour = floor(ppColour * numberOfColours) / numberOfColours;
+    ppColour = floor(ppColour * NumberOfColours) / NumberOfColours;
 
     return float4(ppColour, 1.0f);
 }
